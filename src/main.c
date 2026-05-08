@@ -1,466 +1,832 @@
+#include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "buttons.h"
 #include "gamefunc.h"
 #include "sound.h"
-#include "st7735.h"
 #include "termGFX.h"
 #include "tick.h"
 
-#define HUD_ROW 0
-#define FIELD_LEFT_CHAR 1
-#define FIELD_RIGHT_CHAR (TERM_SIZE_X - 2)
-#define FIELD_TOP_CHAR 1
-#define FIELD_BOTTOM_CHAR (TERM_SIZE_Y - 1)
-#define BRICK_ROWS 3
-#define BRICK_COLS 8
-#define FRAME_MS 8
-#define PADDLE_STEP_MS 4
-#define PADDLE_STEP_PX 4
-#define START_LIVES 3
-#define SOUND_PITCH_SCALE 4
-#define SOUND_TIME_SCALE(time) ((uint8_t)(((time) > 1) ? ((time) / 2) : 1))
-#define SCALE_FREQ(freq) ((uint16_t)((freq) * SOUND_PITCH_SCALE))
+#define FRAME_MS 20
 
-#define FIELD_LEFT_PX (FIELD_LEFT_CHAR * TERM_BLOCK_SIZE)
-#define FIELD_RIGHT_PX (((FIELD_RIGHT_CHAR + 1) * TERM_BLOCK_SIZE) - 1)
-#define FIELD_TOP_PX (FIELD_TOP_CHAR * TERM_BLOCK_SIZE)
-#define FIELD_WIDTH_PX (FIELD_RIGHT_PX - FIELD_LEFT_PX + 1)
-#define PADDLE_Y_PX ((FIELD_BOTTOM_CHAR * TERM_BLOCK_SIZE) - 2)
-#define PADDLE_WIDTH_PX 16
-#define PADDLE_HEIGHT_PX 3
-#define BALL_SIZE_PX 3
-#define BRICK_SLOT_WIDTH_PX (FIELD_WIDTH_PX / BRICK_COLS)
-#define BRICK_SLOT_HEIGHT_PX 6
-#define BRICK_WIDTH_PX (BRICK_SLOT_WIDTH_PX - 2)
-#define BRICK_HEIGHT_PX 4
-#define BALL_START_DX 3
-#define BALL_START_DY -3
+#define G2_PLAYER_X 12
+#define G2_PLAYER_W 20
+#define G2_PLAYER_H 20
+#define G2_MOVE_SPEED 3.0f
 
-typedef enum
-{
-    GAME_PLAYING,
-    GAME_ROUND_WAIT,
-    GAME_WON,
-    GAME_OVER
-} game_state_t;
+#define G2_MAX_BULLETS 8
+#define G2_MAX_ENEMIES 6
+#define G2_MAX_BOSS_SHOTS 8
+
+#define G2_BULLET_W 3
+#define G2_BULLET_H 3
+#define G2_BULLET_VX 3.2f
+
+#define G2_ENEMY_MIN_W 8
+#define G2_ENEMY_MAX_W 14
+#define G2_ENEMY_MIN_H 6
+#define G2_ENEMY_MAX_H 14
+#define G2_ENEMY_BASE_SPEED 1.6f
+#define G2_ENEMY_SCORE_SPEED_COEF 0.8f
+
+#define G2_SPAWN_BASE_INTERVAL_MS 700
+#define G2_SPAWN_DEC_PER_STAGE_MS 50
+#define G2_SPAWN_MIN_INTERVAL_MS 200
+#define G2_SPEEDMUL_PER_STAGE 0.15f
+#define G2_EXTRA_ENEMY_PER_STAGE_PC 15
+#define G2_EXTRA_ENEMY_MAX_PC 70
+
+#define G2_BOSS_SPAWN_SCORE 3000
+#define G2_BOSS_HP 30
+#define G2_BOSS_W 24
+#define G2_BOSS_H 24
+#define G2_BOSS_VY 0.7f
+#define G2_BOSS_ENTRY_OFFSET_X 25
+#define G2_BOSS_HOLD_X 90
+#define G2_BOSS_MIN_Y 10
+#define G2_BOSS_MARGIN_BOTTOM 1
+
+#define G2_BOSSSHOT_W 6
+#define G2_BOSSSHOT_H 6
+#define G2_BOSSSHOT_VX_BASE 1.8f
+#define G2_BOSSSHOT_VX_STAGE_COEF 0.15f
+#define G2_BOSSSHOT_BASE_INTERVAL_MS 1200
+#define G2_BOSSSHOT_DEC_PER_STAGE_MS 40
+#define G2_BOSSSHOT_MIN_INTERVAL_MS 800
+
+#define G2_LIVES_MAX 3
+
+#define G2_SPRITE_COUNT (1 + G2_MAX_BULLETS + G2_MAX_ENEMIES + 1 + G2_MAX_BOSS_SHOTS)
+#define G2_BG_COLOR 4
+#define G2_TEXT_BG_COLOR 4
+#define G2_PLAYER_PALLET 0
+#define G2_BULLET_PALLET 8
+#define G2_ENEMY_PALLET 5
+#define G2_BOSS_PALLET 7
+#define G2_BOSSSHOT_PALLET 9
 
 typedef struct
 {
-    game_state_t state;
-    uint32_t round_start_tick;
-    uint8_t lives;
-    uint8_t score;
-    int16_t paddle_x_px;
-    int16_t ball_x_px;
-    int16_t ball_y_px;
-    int8_t ball_dx_px;
-    int8_t ball_dy_px;
-    uint8_t bricks[BRICK_ROWS][BRICK_COLS];
-} breakout_game_t;
+    uint16_t freq;
+    uint16_t ms;
+} beep_t;
 
-static breakout_game_t game;
+typedef struct
+{
+    float x;
+    float y;
+    float vx;
+    uint8_t alive;
+} bullet_t;
 
-static term_sprite_t brick_sprites[BRICK_ROWS * BRICK_COLS];
+typedef struct
+{
+    float x;
+    float y;
+    uint8_t w;
+    uint8_t h;
+    uint8_t alive;
+} enemy_t;
 
-static const uint8_t paddle_sprite_data[(PADDLE_WIDTH_PX / 4) * PADDLE_HEIGHT_PX] = {
-    0x55, 0x55, 0x55, 0x55,
-    0x55, 0x55, 0x55, 0x55,
-    0x55, 0x55, 0x55, 0x55
+typedef struct
+{
+    float x;
+    float y;
+    float vy;
+    uint8_t hp;
+    uint8_t alive;
+    uint8_t entering;
+} boss_t;
+
+typedef struct
+{
+    float x;
+    float y;
+    float vx;
+    uint8_t alive;
+} boss_shot_t;
+
+static const beep_t snd_start = {1200, 90};
+static const beep_t snd_cancel = {400, 120};
+static const beep_t snd_gameover = {220, 400};
+static const beep_t snd_restart = {1000, 100};
+static const beep_t snd_shot = {1300, 40};
+static const beep_t snd_hit = {900, 70};
+static const beep_t snd_boss_hit = {1000, 40};
+static const beep_t snd_boss_die = {1600, 120};
+
+static const uint8_t player_sprite_data[((G2_PLAYER_W + 3) / 4) * G2_PLAYER_H] = {
+    0x00, 0x00, 0x00, 0x00, 0x00,
+    0x01, 0x55, 0x55, 0x55, 0x40,
+    0x04, 0x00, 0x00, 0x00, 0x10,
+    0x04, 0x00, 0x00, 0x00, 0x10,
+    0x04, 0x00, 0x00, 0x00, 0x10,
+    0x04, 0x00, 0x00, 0x00, 0x10,
+    0x04, 0x00, 0x00, 0x00, 0x10,
+    0x04, 0x05, 0x00, 0x50, 0x10,
+    0x04, 0x00, 0x00, 0x00, 0x10,
+    0x04, 0x00, 0x00, 0x00, 0x10,
+    0x04, 0x00, 0x55, 0x00, 0x10,
+    0x04, 0x00, 0x00, 0x00, 0x10,
+    0x04, 0x00, 0x00, 0x00, 0x10,
+    0x04, 0x00, 0x00, 0x00, 0x10,
+    0x04, 0x00, 0x00, 0x00, 0x10,
+    0x04, 0x00, 0x00, 0x00, 0x10,
+    0x01, 0x55, 0x55, 0x55, 0x40,
+    0x00, 0x55, 0x50, 0x55, 0x50,
+    0x00, 0x55, 0x50, 0x55, 0x50,
+    0x00, 0x00, 0x00, 0x00, 0x00
+};
+static const uint8_t enemy_sprite_data[((G2_ENEMY_MAX_W + 3) / 4) * G2_ENEMY_MAX_H] = {
+    [0 ... ((((G2_ENEMY_MAX_W + 3) / 4) * G2_ENEMY_MAX_H) - 1)] = 0x55
+};
+static const uint8_t boss_sprite_data[((G2_BOSS_W + 3) / 4) * G2_BOSS_H] = {
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x01, 0x54, 0x00, 0x00,
+    0x00, 0x00, 0x15, 0x55, 0x40, 0x00,
+    0x00, 0x01, 0x55, 0x55, 0x54, 0x00,
+    0x00, 0x15, 0x00, 0x00, 0x05, 0x40,
+    0x00, 0x54, 0x00, 0x00, 0x01, 0x50,
+    0x01, 0x50, 0x00, 0x00, 0x00, 0x54,
+    0x05, 0x40, 0xa0, 0xa0, 0x00, 0x55,
+    0x15, 0x00, 0xa0, 0xa0, 0x00, 0x15,
+    0x15, 0x00, 0x00, 0x00, 0x00, 0x15,
+    0x55, 0x02, 0x00, 0x08, 0x00, 0x55,
+    0x55, 0x00, 0x00, 0x00, 0x00, 0x15,
+    0x55, 0x00, 0xaa, 0xaa, 0x00, 0x15,
+    0x55, 0x00, 0x00, 0x00, 0x00, 0x15,
+    0x55, 0x02, 0x00, 0x02, 0x00, 0x15,
+    0x15, 0x00, 0x80, 0x08, 0x00, 0x15,
+    0x15, 0x00, 0x2a, 0xa8, 0x00, 0x55,
+    0x05, 0x40, 0x00, 0x00, 0x01, 0x50,
+    0x01, 0x50, 0x00, 0x00, 0x00, 0x54,
+    0x00, 0x54, 0x00, 0x00, 0x01, 0x50,
+    0x00, 0x15, 0x55, 0x55, 0x55, 0x40,
+    0x00, 0x01, 0x55, 0x55, 0x54, 0x00,
+    0x00, 0x00, 0x01, 0x54, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+};
+static const uint8_t bullet_sprite_data[((G2_BULLET_W + 3) / 4) * G2_BULLET_H] = {
+    [0 ... ((((G2_BULLET_W + 3) / 4) * G2_BULLET_H) - 1)] = 0x55
+};
+static const uint8_t boss_shot_sprite_data[((G2_BOSSSHOT_W + 3) / 4) * G2_BOSSSHOT_H] = {
+    [0 ... ((((G2_BOSSSHOT_W + 3) / 4) * G2_BOSSSHOT_H) - 1)] = 0x55
 };
 
-static const uint8_t ball_sprite_data[((BALL_SIZE_PX + 3) / 4) * BALL_SIZE_PX] = {
-    0x54, 0x54, 0x54
-};
+static float g2_py;
+static bullet_t g2_bullets[G2_MAX_BULLETS];
+static enemy_t g2_enemies[G2_MAX_ENEMIES];
+static boss_t g2_boss;
+static boss_shot_t g2_boss_shots[G2_MAX_BOSS_SHOTS];
+static uint8_t g2_boss_spawned;
+static uint8_t g2_boss_defeated;
+static uint8_t g2_clear;
+static uint32_t g2_last_spawn;
+static uint32_t g2_score;
+static uint8_t g2_game_over;
+static uint8_t g2_game_over_sound_played;
+static uint8_t g2_stage;
+static uint16_t g2_spawn_interval;
+static float g2_speed_mul;
+static uint32_t g2_next_boss_spawn_at;
+static uint32_t g2_stage_score_base;
+static uint32_t g2_boss_last_shot_ms;
+static uint16_t g2_boss_shot_interval;
+static uint8_t g2_lives;
+static uint8_t g2_hard_over;
+static uint32_t g2_input_lock_until;
+static uint32_t prng_state = 0x13579bdfUL;
 
-static const uint8_t brick_sprite_data[((BRICK_WIDTH_PX + 3) / 4) * BRICK_HEIGHT_PX] = {
-    0x55, 0x55, 0x55, 0x50,
-    0x55, 0x55, 0x55, 0x50,
-    0x55, 0x55, 0x55, 0x50,
-    0x55, 0x55, 0x55, 0x50
-};
+static uint8_t btn_left_prev;
+static uint8_t btn_action_prev;
 
-static const uint8_t left_border_sprite_data[(LCD_HEIGHT - FIELD_TOP_PX)] = {
-    [0 ...(LCD_HEIGHT - FIELD_TOP_PX - 1)] = 0x40
+static term_sprite_t player_sprite = {
+    .x = 0, .y = 0, .size_x = G2_PLAYER_W, .size_y = G2_PLAYER_H,
+    .data = (uint8_t *)player_sprite_data, .pallet = G2_PLAYER_PALLET
 };
-
-static const uint8_t right_border_sprite_data[(LCD_HEIGHT - FIELD_TOP_PX)] = {
-    [0 ...(LCD_HEIGHT - FIELD_TOP_PX - 1)] = 0x40
+static term_sprite_t bullet_sprites[G2_MAX_BULLETS] = {
+    {.x = 0, .y = 0, .size_x = G2_BULLET_W, .size_y = G2_BULLET_H, .data = (uint8_t *)bullet_sprite_data, .pallet = G2_BULLET_PALLET},
+    {.x = 0, .y = 0, .size_x = G2_BULLET_W, .size_y = G2_BULLET_H, .data = (uint8_t *)bullet_sprite_data, .pallet = G2_BULLET_PALLET},
+    {.x = 0, .y = 0, .size_x = G2_BULLET_W, .size_y = G2_BULLET_H, .data = (uint8_t *)bullet_sprite_data, .pallet = G2_BULLET_PALLET},
+    {.x = 0, .y = 0, .size_x = G2_BULLET_W, .size_y = G2_BULLET_H, .data = (uint8_t *)bullet_sprite_data, .pallet = G2_BULLET_PALLET},
+    {.x = 0, .y = 0, .size_x = G2_BULLET_W, .size_y = G2_BULLET_H, .data = (uint8_t *)bullet_sprite_data, .pallet = G2_BULLET_PALLET},
+    {.x = 0, .y = 0, .size_x = G2_BULLET_W, .size_y = G2_BULLET_H, .data = (uint8_t *)bullet_sprite_data, .pallet = G2_BULLET_PALLET},
+    {.x = 0, .y = 0, .size_x = G2_BULLET_W, .size_y = G2_BULLET_H, .data = (uint8_t *)bullet_sprite_data, .pallet = G2_BULLET_PALLET},
+    {.x = 0, .y = 0, .size_x = G2_BULLET_W, .size_y = G2_BULLET_H, .data = (uint8_t *)bullet_sprite_data, .pallet = G2_BULLET_PALLET}
 };
-
-static const uint8_t top_border_sprite_data[((FIELD_WIDTH_PX + 2 + 3) / 4)] = {
-    [0 ...(((FIELD_WIDTH_PX + 2 + 3) / 4) - 1)] = 0x55
+static term_sprite_t enemy_sprites[G2_MAX_ENEMIES] = {
+    {.x = 0, .y = 0, .size_x = G2_ENEMY_MIN_W, .size_y = G2_ENEMY_MIN_H, .data = (uint8_t *)enemy_sprite_data, .pallet = G2_ENEMY_PALLET},
+    {.x = 0, .y = 0, .size_x = G2_ENEMY_MIN_W, .size_y = G2_ENEMY_MIN_H, .data = (uint8_t *)enemy_sprite_data, .pallet = G2_ENEMY_PALLET},
+    {.x = 0, .y = 0, .size_x = G2_ENEMY_MIN_W, .size_y = G2_ENEMY_MIN_H, .data = (uint8_t *)enemy_sprite_data, .pallet = G2_ENEMY_PALLET},
+    {.x = 0, .y = 0, .size_x = G2_ENEMY_MIN_W, .size_y = G2_ENEMY_MIN_H, .data = (uint8_t *)enemy_sprite_data, .pallet = G2_ENEMY_PALLET},
+    {.x = 0, .y = 0, .size_x = G2_ENEMY_MIN_W, .size_y = G2_ENEMY_MIN_H, .data = (uint8_t *)enemy_sprite_data, .pallet = G2_ENEMY_PALLET},
+    {.x = 0, .y = 0, .size_x = G2_ENEMY_MIN_W, .size_y = G2_ENEMY_MIN_H, .data = (uint8_t *)enemy_sprite_data, .pallet = G2_ENEMY_PALLET}
 };
-
-static term_sprite_t paddle_sprite = {
-    .x = 0,
-    .y = PADDLE_Y_PX,
-    .size_x = PADDLE_WIDTH_PX,
-    .size_y = PADDLE_HEIGHT_PX,
-    .data = (uint8_t *)paddle_sprite_data,
-    .pallet = 0
+static term_sprite_t boss_sprite = {
+    .x = 0, .y = 0, .size_x = G2_BOSS_W, .size_y = G2_BOSS_H,
+    .data = (uint8_t *)boss_sprite_data, .pallet = G2_BOSS_PALLET
 };
-
-static term_sprite_t ball_sprite = {
-    .x = 0,
-    .y = 0,
-    .size_x = BALL_SIZE_PX,
-    .size_y = BALL_SIZE_PX,
-    .data = (uint8_t *)ball_sprite_data,
-    .pallet = 5
-};
-
-static term_sprite_t left_border_sprite = {
-    .x = FIELD_LEFT_PX - 1,
-    .y = FIELD_TOP_PX,
-    .size_x = 1,
-    .size_y = LCD_HEIGHT - FIELD_TOP_PX,
-    .data = (uint8_t *)left_border_sprite_data,
-    .pallet = 0
-};
-
-static term_sprite_t right_border_sprite = {
-    .x = FIELD_RIGHT_PX + 1,
-    .y = FIELD_TOP_PX,
-    .size_x = 1,
-    .size_y = LCD_HEIGHT - FIELD_TOP_PX,
-    .data = (uint8_t *)right_border_sprite_data,
-    .pallet = 0
-};
-
-static term_sprite_t top_border_sprite = {
-    .x = FIELD_LEFT_PX - 1,
-    .y = FIELD_TOP_PX,
-    .size_x = FIELD_WIDTH_PX + 2,
-    .size_y = 1,
-    .data = (uint8_t *)top_border_sprite_data,
-    .pallet = 0
+static term_sprite_t boss_shot_sprites[G2_MAX_BOSS_SHOTS] = {
+    {.x = 0, .y = 0, .size_x = G2_BOSSSHOT_W, .size_y = G2_BOSSSHOT_H, .data = (uint8_t *)boss_shot_sprite_data, .pallet = G2_BOSSSHOT_PALLET},
+    {.x = 0, .y = 0, .size_x = G2_BOSSSHOT_W, .size_y = G2_BOSSSHOT_H, .data = (uint8_t *)boss_shot_sprite_data, .pallet = G2_BOSSSHOT_PALLET},
+    {.x = 0, .y = 0, .size_x = G2_BOSSSHOT_W, .size_y = G2_BOSSSHOT_H, .data = (uint8_t *)boss_shot_sprite_data, .pallet = G2_BOSSSHOT_PALLET},
+    {.x = 0, .y = 0, .size_x = G2_BOSSSHOT_W, .size_y = G2_BOSSSHOT_H, .data = (uint8_t *)boss_shot_sprite_data, .pallet = G2_BOSSSHOT_PALLET},
+    {.x = 0, .y = 0, .size_x = G2_BOSSSHOT_W, .size_y = G2_BOSSSHOT_H, .data = (uint8_t *)boss_shot_sprite_data, .pallet = G2_BOSSSHOT_PALLET},
+    {.x = 0, .y = 0, .size_x = G2_BOSSSHOT_W, .size_y = G2_BOSSSHOT_H, .data = (uint8_t *)boss_shot_sprite_data, .pallet = G2_BOSSSHOT_PALLET},
+    {.x = 0, .y = 0, .size_x = G2_BOSSSHOT_W, .size_y = G2_BOSSSHOT_H, .data = (uint8_t *)boss_shot_sprite_data, .pallet = G2_BOSSSHOT_PALLET},
+    {.x = 0, .y = 0, .size_x = G2_BOSSSHOT_W, .size_y = G2_BOSSSHOT_H, .data = (uint8_t *)boss_shot_sprite_data, .pallet = G2_BOSSSHOT_PALLET}
 };
 
 static void AppInit(void);
-static void InitBrickSprites(void);
-static void GameReset(void);
-static void ResetRound(void);
-static void FillBricks(void);
-static void UpdateGame(void);
-static void MovePaddle(uint32_t now);
-static void UpdateBall(void);
-static void DrawGame(void);
-static void DrawBorders(void);
-static void DrawBricks(void);
-static void DrawStatus(void);
-static uint8_t HandleBrickCollision(int16_t x_px, int16_t y_px);
-static uint8_t RemainingBricks(void);
-static void PlayBounceSound(void);
+static void PlayBeep(const beep_t *snd);
+static float AbsFloat(float value);
+static uint32_t NextRandom(void);
+static int RandomRange(int min_value, int max_value);
+static void PrintLabelValue(int x, int y, uint8_t color, const char *label, uint32_t value);
+static void G2_ApplyStageParams(void);
+static void G2_Reset(void);
+static void G2_NextStage(void);
+static void G2_RestartStage(void);
+static uint8_t G2_CountAliveEnemies(void);
+static void G2_CommitDeath(void);
+static void G2_SpawnEnemy(void);
+static void G2_Fire(void);
+static void G2_BossFire(void);
+static void G2_Update(void);
+static void G2_Draw(void);
 
 int main(void)
 {
     AppInit();
-    GameReset();
+    G2_Reset();
+    PlayBeep(&snd_start);
 
-    uint8_t action_prev = 0;
     while (1) {
-        uint32_t now = TICK_Get();
+        uint32_t frame_start = TICK_Get();
 
         BTN_Task();
-
-        if (game.state == GAME_PLAYING) {
-            MovePaddle(now);
-            UpdateGame();
-        } else if (game.state == GAME_ROUND_WAIT) {
-            MovePaddle(now);
-            game.ball_x_px = game.paddle_x_px + (PADDLE_WIDTH_PX / 2) - (BALL_SIZE_PX / 2);
-            if ((now - game.round_start_tick) >= 1000) {
-                game.state = GAME_PLAYING;
-            }
-        } else {
-            if (ButtonPressedEdge(BTN_ACTION, &action_prev)) {
-                GameReset();
-            }
+        G2_Update();
+        G2_Draw();
+        if (!g2_game_over && !g2_clear) {
+            g2_score += 1U;
         }
+        tGFX_Update();
 
-        DrawGame();
-
-        while ((TICK_Get() - now) < FRAME_MS);
+        while ((TICK_Get() - frame_start) < FRAME_MS) {
+        }
     }
 }
 
 static void AppInit(void)
 {
     GameLib_Init();
-    InitBrickSprites();
-    tGFX_SetSpritesCount(5 + (BRICK_ROWS * BRICK_COLS));
-    LCD_OptimizedFill(0, 0, LCD_WIDTH, LCD_HEIGHT, ST7735_BLACK);
-}
-
-static void InitBrickSprites(void)
-{
-    static const uint8_t brick_palettes[BRICK_ROWS] = {4, 5, 6};
-    uint8_t row;
-    uint8_t col;
-
-    for (row = 0; row < BRICK_ROWS; ++row) {
-        for (col = 0; col < BRICK_COLS; ++col) {
-            uint8_t idx = (uint8_t)(row * BRICK_COLS + col);
-
-            brick_sprites[idx].x = FIELD_LEFT_PX + (col * BRICK_SLOT_WIDTH_PX) + ((BRICK_SLOT_WIDTH_PX - BRICK_WIDTH_PX) / 2);
-            brick_sprites[idx].y = ((FIELD_TOP_CHAR + 1) * TERM_BLOCK_SIZE) + (row * BRICK_SLOT_HEIGHT_PX) + ((BRICK_SLOT_HEIGHT_PX - BRICK_HEIGHT_PX) / 2);
-            brick_sprites[idx].size_x = BRICK_WIDTH_PX;
-            brick_sprites[idx].size_y = BRICK_HEIGHT_PX;
-            brick_sprites[idx].data = (uint8_t *)brick_sprite_data;
-            brick_sprites[idx].pallet = brick_palettes[row];
-        }
-    }
-}
-
-static void GameReset(void)
-{
-    game.state = GAME_PLAYING;
-    game.lives = START_LIVES;
-    game.score = 0;
-    game.paddle_x_px = FIELD_LEFT_PX + ((FIELD_RIGHT_PX - FIELD_LEFT_PX + 1 - PADDLE_WIDTH_PX) / 2);
-    FillBricks();
-    ResetRound();
-    SND_Unmute();
-}
-
-static void ResetRound(void)
-{
-    game.ball_x_px = game.paddle_x_px + (PADDLE_WIDTH_PX / 2) - (BALL_SIZE_PX / 2);
-    game.ball_y_px = PADDLE_Y_PX - BALL_SIZE_PX - 2;
-    game.ball_dx_px = BALL_START_DX;
-    game.ball_dy_px = BALL_START_DY;
-}
-
-static void FillBricks(void)
-{
-    uint8_t row;
-    uint8_t col;
-
-    for (row = 0; row < BRICK_ROWS; ++row) {
-        for (col = 0; col < BRICK_COLS; ++col) {
-            game.bricks[row][col] = 1;
-        }
-    }
-}
-
-static void UpdateGame(void)
-{
-    UpdateBall();
-
-    if (game.state == GAME_PLAYING && RemainingBricks() == 0) {
-        game.state = GAME_WON;
-        SND_PlaySequence((uint16_t[]){SCALE_FREQ(523), SOUND_TIME_SCALE(1), SCALE_FREQ(659), SOUND_TIME_SCALE(1), SCALE_FREQ(784), SOUND_TIME_SCALE(1), SCALE_FREQ(1046), SOUND_TIME_SCALE(2)}, 3);
-    }
-}
-
-static void MovePaddle(uint32_t now)
-{
-    static uint32_t last_move = 0;
-
-    if ((now - last_move) < PADDLE_STEP_MS) {
-        return;
-    }
-
-    if (BTN_IsPressedRAW(BTN_LEFT) && game.paddle_x_px > FIELD_LEFT_PX) {
-        game.paddle_x_px -= PADDLE_STEP_PX;
-        if (game.paddle_x_px < FIELD_LEFT_PX) {
-            game.paddle_x_px = FIELD_LEFT_PX;
-        }
-        last_move = now;
-    }
-
-    if (BTN_IsPressedRAW(BTN_RIGHT) && (game.paddle_x_px + PADDLE_WIDTH_PX - 1) < FIELD_RIGHT_PX) {
-        game.paddle_x_px += PADDLE_STEP_PX;
-        if ((game.paddle_x_px + PADDLE_WIDTH_PX - 1) > FIELD_RIGHT_PX) {
-            game.paddle_x_px = FIELD_RIGHT_PX - PADDLE_WIDTH_PX + 1;
-        }
-        last_move = now;
-    }
-}
-
-static void UpdateBall(void)
-{
-    static uint8_t ball_frame;
-    if (++ball_frame & 1) return;
-
-    int16_t next_x = game.ball_x_px + game.ball_dx_px;
-    int16_t next_y = game.ball_y_px + game.ball_dy_px;
-    int16_t ball_center_x;
-    int16_t ball_center_y;
-
-    if (next_x < FIELD_LEFT_PX || (next_x + BALL_SIZE_PX - 1) > FIELD_RIGHT_PX) {
-        game.ball_dx_px = (int8_t)-game.ball_dx_px;
-        next_x = game.ball_x_px + game.ball_dx_px;
-        PlayBounceSound();
-    }
-
-    ball_center_x = next_x + (BALL_SIZE_PX / 2);
-    ball_center_y = game.ball_y_px + (BALL_SIZE_PX / 2);
-    if (HandleBrickCollision(ball_center_x, ball_center_y)) {
-        game.ball_dx_px = (int8_t)-game.ball_dx_px;
-        next_x = game.ball_x_px + game.ball_dx_px;
-    }
-
-    if (next_y < FIELD_TOP_PX) {
-        game.ball_dy_px = (int8_t)-game.ball_dy_px;
-        next_y = game.ball_y_px + game.ball_dy_px;
-        PlayBounceSound();
-    }
-
-    ball_center_x = next_x + (BALL_SIZE_PX / 2);
-    ball_center_y = next_y + (BALL_SIZE_PX / 2);
-    if (HandleBrickCollision(ball_center_x, ball_center_y)) {
-        game.ball_dy_px = (int8_t)-game.ball_dy_px;
-        next_y = game.ball_y_px + game.ball_dy_px;
-    }
-
-    if (game.ball_dy_px > 0 && (next_y + BALL_SIZE_PX) >= PADDLE_Y_PX) {
-        int16_t ball_mid_x = next_x + (BALL_SIZE_PX / 2);
-
-        if (ball_mid_x >= game.paddle_x_px && ball_mid_x < (game.paddle_x_px + PADDLE_WIDTH_PX)) {
-            int16_t hit = ball_mid_x - game.paddle_x_px;
-
-            game.ball_dy_px = -2;
-            if (hit < (PADDLE_WIDTH_PX / 3)) {
-                game.ball_dx_px = -3;
-            } else if (hit > ((PADDLE_WIDTH_PX * 2) / 3)) {
-                game.ball_dx_px = 3;
-            } else {
-                game.ball_dx_px = 0;
-            }
-
-            next_x = game.ball_x_px + game.ball_dx_px;
-            next_y = PADDLE_Y_PX - BALL_SIZE_PX;
-            PlayBounceSound();
-        } else if (next_y > PADDLE_Y_PX) {
-            if (game.lives > 0) {
-                game.lives--;
-            }
-
-            if (game.lives == 0) {
-                game.state = GAME_OVER;
-                /* Chopin Funeral March: F Bb F(long) Eb D C Bb(low/long) */
-                static const uint16_t funeral_march[] = {
-                    SCALE_FREQ(175), SOUND_TIME_SCALE(60),   /* F3  300ms */
-                    SCALE_FREQ(233), SOUND_TIME_SCALE(60),   /* Bb3 300ms */
-                    SCALE_FREQ(175), SOUND_TIME_SCALE(120),  /* F3  600ms */
-                    SCALE_FREQ(156), SOUND_TIME_SCALE(40),   /* Eb3 200ms */
-                    SCALE_FREQ(147), SOUND_TIME_SCALE(40),   /* D3  200ms */
-                    SCALE_FREQ(131), SOUND_TIME_SCALE(40),   /* C3  200ms */
-                    SCALE_FREQ(117), SOUND_TIME_SCALE(200),  /* Bb2 1000ms */
-                };
-                SND_PlaySequence((uint16_t*)funeral_march, 6);
-            } else {
-                ResetRound();
-                game.state = GAME_ROUND_WAIT;
-                game.round_start_tick = TICK_Get();
-                SND_PlayNow(SCALE_FREQ(220), 1);
-            }
-            return;
-        }
-    }
-
-    game.ball_x_px = next_x;
-    game.ball_y_px = next_y;
-}
-
-static void DrawGame(void)
-{
-    uint8_t brick_idx;
-
-    paddle_sprite.x = game.paddle_x_px;
-    ball_sprite.x = game.ball_x_px;
-    ball_sprite.y = game.ball_y_px;
-
-    GameLib_ClearScreen(0);
-    DrawBorders();
-    DrawBricks();
-    DrawStatus();
-    tGFX_SetSprite(&paddle_sprite, 0);
-    tGFX_SetSprite(&ball_sprite, 1);
-    tGFX_SetSprite(&left_border_sprite, 2);
-    tGFX_SetSprite(&right_border_sprite, 3);
-    tGFX_SetSprite(&top_border_sprite, 4);
-    for (brick_idx = 0; brick_idx < (BRICK_ROWS * BRICK_COLS); ++brick_idx) {
-        if (game.bricks[brick_idx / BRICK_COLS][brick_idx % BRICK_COLS]) {
-            tGFX_SetSprite(&brick_sprites[brick_idx], (uint8_t)(brick_idx + 5));
-        } else {
-            tGFX_ClearSprite((uint8_t)(brick_idx + 5));
-        }
-    }
-
-    if (game.state == GAME_WON) {
-        GameLib_DrawMessage("YOU WIN!", "ACTION RETRY");
-    } else if (game.state == GAME_OVER) {
-        GameLib_DrawMessage("GAME OVER", "ACTION RETRY");
-    }
-
+    tGFX_SetSpritesCount(0);
+    GameLib_ClearScreen(G2_BG_COLOR);
     tGFX_Update();
 }
 
-static void DrawBorders(void)
+static void PlayBeep(const beep_t *snd)
 {
-    /* Border lines are drawn directly to the LCD for crisp 1px edges. */
+    uint8_t ticks_10ms;
+
+    if ((snd == NULL) || (snd->freq == 0U) || (snd->ms == 0U)) {
+        return;
+    }
+
+    ticks_10ms = (uint8_t)((snd->ms + 9U) / 10U);
+    if (ticks_10ms == 0U) {
+        ticks_10ms = 1U;
+    }
+    SND_PlayNow(snd->freq, ticks_10ms);
 }
 
-static void DrawBricks(void)
+static float AbsFloat(float value)
 {
-    /* Bricks are rendered as sprites to keep a 1px black margin on all sides. */
+    return (value < 0.0f) ? -value : value;
 }
 
-static void DrawStatus(void)
+static uint32_t NextRandom(void)
 {
-    char line[21];
-
-    snprintf(line, sizeof(line), "BK %02u L%u", (unsigned)game.score, (unsigned)game.lives);
-    tGFX_SetCursor(0, HUD_ROW);
-    tGFX_Print(line, 15, 0);
+    prng_state = (prng_state * 1664525UL) + 1013904223UL;
+    return prng_state;
 }
 
-static uint8_t HandleBrickCollision(int16_t x_px, int16_t y_px)
+static int RandomRange(int min_value, int max_value)
 {
-    uint8_t row;
-    uint8_t col;
+    if (max_value <= min_value) {
+        return min_value;
+    }
+    return min_value + (int)(NextRandom() % (uint32_t)(max_value - min_value));
+}
 
-    for (row = 0; row < BRICK_ROWS; ++row) {
-        for (col = 0; col < BRICK_COLS; ++col) {
-            uint8_t idx = (uint8_t)(row * BRICK_COLS + col);
-            term_sprite_t *brick = &brick_sprites[idx];
+static void PrintLabelValue(int x, int y, uint8_t color, const char *label, uint32_t value)
+{
+    char buf[11];
+    tGFX_SetCursor((uint8_t)x, (uint8_t)y);
+    tGFX_Print((char *)label, color, G2_TEXT_BG_COLOR);
+    sprintf(buf, "%lu", (unsigned long)value);
+    tGFX_SetCursor((uint8_t)(x + (int)strlen(label)), (uint8_t)y);
+    tGFX_Print(buf, color, G2_TEXT_BG_COLOR);
+}
 
-            if (!game.bricks[row][col]) {
+static void G2_ApplyStageParams(void)
+{
+    int16_t spawn_candidate;
+    int16_t shot_candidate;
+
+    g2_speed_mul = 1.0f + (G2_SPEEDMUL_PER_STAGE * g2_stage);
+
+    spawn_candidate = (int16_t)G2_SPAWN_BASE_INTERVAL_MS - (int16_t)(G2_SPAWN_DEC_PER_STAGE_MS * g2_stage);
+    g2_spawn_interval = (spawn_candidate < (int16_t)G2_SPAWN_MIN_INTERVAL_MS) ? G2_SPAWN_MIN_INTERVAL_MS : (uint16_t)spawn_candidate;
+
+    shot_candidate = (int16_t)G2_BOSSSHOT_BASE_INTERVAL_MS - (int16_t)(G2_BOSSSHOT_DEC_PER_STAGE_MS * g2_stage);
+    g2_boss_shot_interval = (shot_candidate < (int16_t)G2_BOSSSHOT_MIN_INTERVAL_MS) ? G2_BOSSSHOT_MIN_INTERVAL_MS : (uint16_t)shot_candidate;
+}
+
+static void G2_Reset(void)
+{
+    memset(g2_bullets, 0, sizeof(g2_bullets));
+    memset(g2_enemies, 0, sizeof(g2_enemies));
+    memset(g2_boss_shots, 0, sizeof(g2_boss_shots));
+
+    g2_py = 30.0f;
+    g2_score = 0U;
+    g2_game_over = 0U;
+    g2_game_over_sound_played = 0U;
+    g2_clear = 0U;
+    g2_hard_over = 0U;
+    g2_stage = 1U;
+    g2_lives = G2_LIVES_MAX;
+    g2_boss_spawned = 0U;
+    g2_boss_defeated = 0U;
+    g2_input_lock_until = 0U;
+
+    G2_ApplyStageParams();
+
+    g2_next_boss_spawn_at = G2_BOSS_SPAWN_SCORE;
+    g2_stage_score_base = 0U;
+    g2_last_spawn = TICK_Get();
+    g2_boss_last_shot_ms = TICK_Get();
+
+    g2_boss.x = 128.0f + G2_BOSS_ENTRY_OFFSET_X;
+    g2_boss.y = 12.0f;
+    g2_boss.vy = G2_BOSS_VY;
+    g2_boss.hp = G2_BOSS_HP;
+    g2_boss.alive = 0U;
+    g2_boss.entering = 0U;
+}
+
+static void G2_NextStage(void)
+{
+    memset(g2_bullets, 0, sizeof(g2_bullets));
+    memset(g2_enemies, 0, sizeof(g2_enemies));
+    memset(g2_boss_shots, 0, sizeof(g2_boss_shots));
+
+    g2_stage++;
+    g2_clear = 0U;
+    g2_game_over = 0U;
+    g2_game_over_sound_played = 0U;
+    g2_hard_over = 0U;
+    G2_ApplyStageParams();
+
+    g2_next_boss_spawn_at = g2_score + G2_BOSS_SPAWN_SCORE;
+    g2_stage_score_base = g2_score;
+    g2_last_spawn = TICK_Get();
+    g2_boss_last_shot_ms = TICK_Get();
+    g2_input_lock_until = 0U;
+
+    g2_boss.x = 128.0f + G2_BOSS_ENTRY_OFFSET_X;
+    g2_boss.y = 12.0f;
+    g2_boss.vy = G2_BOSS_VY;
+    g2_boss.hp = G2_BOSS_HP;
+    g2_boss.alive = 0U;
+    g2_boss.entering = 0U;
+
+    g2_boss_spawned = 0U;
+    g2_boss_defeated = 0U;
+    PlayBeep(&snd_start);
+}
+
+static void G2_RestartStage(void)
+{
+    uint8_t keep_boss_fight = (g2_boss_spawned && g2_boss.alive) ? 1U : 0U;
+
+    memset(g2_bullets, 0, sizeof(g2_bullets));
+    memset(g2_enemies, 0, sizeof(g2_enemies));
+    memset(g2_boss_shots, 0, sizeof(g2_boss_shots));
+
+    g2_py = 30.0f;
+    g2_game_over = 0U;
+    g2_game_over_sound_played = 0U;
+    g2_clear = 0U;
+    g2_hard_over = 0U;
+    g2_input_lock_until = 0U;
+    g2_last_spawn = TICK_Get();
+    g2_boss_last_shot_ms = TICK_Get();
+
+    if (keep_boss_fight) {
+        g2_boss_spawned = 1U;
+        g2_boss_defeated = 0U;
+    } else {
+        g2_boss_spawned = 0U;
+        g2_boss_defeated = 0U;
+        g2_boss.x = 128.0f + G2_BOSS_ENTRY_OFFSET_X;
+        g2_boss.y = 12.0f;
+        g2_boss.vy = G2_BOSS_VY;
+        g2_boss.hp = G2_BOSS_HP;
+        g2_boss.alive = 0U;
+        g2_boss.entering = 0U;
+    }
+}
+
+static uint8_t G2_CountAliveEnemies(void)
+{
+    uint8_t i;
+    uint8_t count = 0U;
+    for (i = 0; i < G2_MAX_ENEMIES; ++i) {
+        if (g2_enemies[i].alive) {
+            count++;
+        }
+    }
+    return count;
+}
+
+static void G2_CommitDeath(void)
+{
+    if (g2_game_over) {
+        return;
+    }
+
+    g2_game_over = 1U;
+    if (!g2_game_over_sound_played) {
+        PlayBeep(&snd_gameover);
+        g2_game_over_sound_played = 1U;
+    }
+    if (g2_lives > 0U) {
+        g2_lives--;
+    }
+    g2_hard_over = (g2_lives == 0U) ? 1U : 0U;
+    g2_input_lock_until = TICK_Get() + 500U;
+    btn_left_prev = 0U;
+    btn_action_prev = 0U;
+}
+
+static void G2_SpawnEnemy(void)
+{
+    uint8_t i;
+    for (i = 0; i < G2_MAX_ENEMIES; ++i) {
+        if (!g2_enemies[i].alive) {
+            g2_enemies[i].alive = 1U;
+            g2_enemies[i].x = 128.0f + RandomRange(0, 25);
+            g2_enemies[i].w = (uint8_t)RandomRange(G2_ENEMY_MIN_W, G2_ENEMY_MAX_W + 1);
+            g2_enemies[i].h = (uint8_t)RandomRange(G2_ENEMY_MIN_H, G2_ENEMY_MAX_H + 1);
+            g2_enemies[i].y = (float)RandomRange(10, 80 - (int)g2_enemies[i].h);
+            return;
+        }
+    }
+}
+
+static void G2_Fire(void)
+{
+    uint8_t i;
+    for (i = 0; i < G2_MAX_BULLETS; ++i) {
+        if (!g2_bullets[i].alive) {
+            g2_bullets[i].alive = 1U;
+            g2_bullets[i].x = (float)(G2_PLAYER_X + 18);
+            g2_bullets[i].y = g2_py + 4.0f;
+            g2_bullets[i].vx = G2_BULLET_VX;
+            PlayBeep(&snd_shot);
+            return;
+        }
+    }
+}
+
+static void G2_BossFire(void)
+{
+    uint8_t i;
+    for (i = 0; i < G2_MAX_BOSS_SHOTS; ++i) {
+        if (!g2_boss_shots[i].alive) {
+            int dy = RandomRange(-10, 11);
+            g2_boss_shots[i].alive = 1U;
+            g2_boss_shots[i].x = g2_boss.x - 2.0f;
+            g2_boss_shots[i].y = g2_boss.y + 9.0f + dy;
+            if (g2_boss_shots[i].y < 0.0f) {
+                g2_boss_shots[i].y = 0.0f;
+            }
+            if (g2_boss_shots[i].y > 58.0f) {
+                g2_boss_shots[i].y = 58.0f;
+            }
+            g2_boss_shots[i].vx = -(G2_BOSSSHOT_VX_BASE + (G2_BOSSSHOT_VX_STAGE_COEF * g2_stage));
+            return;
+        }
+    }
+}
+
+static void G2_Update(void)
+{
+    uint8_t move_up = BTN_IsPressed(BTN_UP);
+    uint8_t move_down = BTN_IsPressed(BTN_DOWN);
+    uint8_t fire_edge = ButtonPressedEdge(BTN_ACTION, &btn_action_prev);
+    uint32_t now = TICK_Get();
+    uint8_t i;
+
+    if (g2_clear || g2_game_over) {
+        if (now < g2_input_lock_until) {
+            return;
+        }
+        if (fire_edge) {
+            PlayBeep(g2_clear ? &snd_start : &snd_restart);
+            if (g2_clear) {
+                G2_NextStage();
+            } else {
+                if (g2_hard_over) {
+                    G2_Reset();
+                } else {
+                    G2_RestartStage();
+                }
+            }
+        }
+        if (ButtonPressedEdge(BTN_LEFT, &btn_left_prev)) {
+            PlayBeep(&snd_cancel);
+            G2_Reset();
+        }
+        return;
+    }
+
+    if (move_up && !move_down) {
+        g2_py -= G2_MOVE_SPEED;
+    } else if (move_down && !move_up) {
+        g2_py += G2_MOVE_SPEED;
+    }
+
+    if (g2_py < 0.0f) {
+        g2_py = 0.0f;
+    }
+    if (g2_py > 60.0f) {
+        g2_py = 60.0f;
+    }
+
+    if (fire_edge) {
+        G2_Fire();
+    }
+
+    for (i = 0; i < G2_MAX_BULLETS; ++i) {
+        if (g2_bullets[i].alive) {
+            g2_bullets[i].x += g2_bullets[i].vx;
+            if (g2_bullets[i].x > 160.0f) {
+                g2_bullets[i].alive = 0U;
+            }
+        }
+    }
+
+    if (!g2_boss_spawned && !g2_boss_defeated && (g2_score >= g2_next_boss_spawn_at)) {
+        g2_boss_spawned = 1U;
+        g2_boss.alive = 1U;
+        g2_boss.entering = 1U;
+        g2_boss.x = 128.0f + G2_BOSS_ENTRY_OFFSET_X;
+        g2_boss.y = 12.0f;
+        g2_boss.vy = G2_BOSS_VY;
+        g2_boss.hp = G2_BOSS_HP;
+    }
+
+    if ((!g2_boss_spawned || !g2_boss.alive) && ((now - g2_last_spawn) >= g2_spawn_interval)) {
+        int extra_chance;
+        g2_last_spawn = now;
+        if (G2_CountAliveEnemies() < G2_MAX_ENEMIES) {
+            G2_SpawnEnemy();
+            extra_chance = G2_EXTRA_ENEMY_PER_STAGE_PC * g2_stage;
+            if (extra_chance > G2_EXTRA_ENEMY_MAX_PC) {
+                extra_chance = G2_EXTRA_ENEMY_MAX_PC;
+            }
+            if ((RandomRange(0, 100) < extra_chance) && (G2_CountAliveEnemies() < G2_MAX_ENEMIES)) {
+                G2_SpawnEnemy();
+            }
+        }
+    }
+
+    for (i = 0; i < G2_MAX_ENEMIES; ++i) {
+        if (g2_enemies[i].alive) {
+            float score_phase = 0.0f;
+            uint8_t b;
+            int px1, py1, px2, py2;
+            int ex1, ey1, ex2, ey2;
+
+            if (g2_score > g2_stage_score_base) {
+                score_phase = (float)(g2_score - g2_stage_score_base) / (float)G2_BOSS_SPAWN_SCORE;
+                if (score_phase > 1.0f) {
+                    score_phase = 1.0f;
+                }
+            }
+
+            g2_enemies[i].x -= (G2_ENEMY_BASE_SPEED * g2_speed_mul) + (G2_ENEMY_SCORE_SPEED_COEF * score_phase);
+            if ((g2_enemies[i].x + g2_enemies[i].w) < 0.0f) {
+                g2_enemies[i].alive = 0U;
                 continue;
             }
 
-            if (x_px >= brick->x && x_px < (brick->x + brick->size_x) &&
-                y_px >= brick->y && y_px < (brick->y + brick->size_y)) {
-                game.bricks[row][col] = 0;
-                game.score++;
-                SND_PlayNow(SCALE_FREQ(700 + (row * 100)), SOUND_TIME_SCALE(3));
-                return 1;
+            px1 = G2_PLAYER_X;
+            py1 = (int)g2_py;
+            px2 = px1 + G2_PLAYER_W - 1;
+            py2 = py1 + G2_PLAYER_H - 1;
+            ex1 = (int)g2_enemies[i].x;
+            ey1 = (int)g2_enemies[i].y;
+            ex2 = ex1 + g2_enemies[i].w - 1;
+            ey2 = ey1 + g2_enemies[i].h - 1;
+
+            if (!((px2 < ex1) || (ex2 < px1) || (py2 < ey1) || (ey2 < py1))) {
+                G2_CommitDeath();
+                return;
+            }
+
+            for (b = 0; b < G2_MAX_BULLETS; ++b) {
+                if (g2_bullets[b].alive) {
+                    int bx1 = (int)g2_bullets[b].x;
+                    int by1 = (int)g2_bullets[b].y;
+                    int bx2 = bx1 + G2_BULLET_W - 1;
+                    int by2 = by1 + G2_BULLET_H - 1;
+
+                    if (!((bx2 < ex1) || (ex2 < bx1) || (by2 < ey1) || (ey2 < by1))) {
+                        g2_bullets[b].alive = 0U;
+                        g2_enemies[i].alive = 0U;
+                        g2_score += 100U;
+                        PlayBeep(&snd_hit);
+                        break;
+                    }
+                }
             }
         }
     }
-    return 0;
-}
 
-static uint8_t RemainingBricks(void)
-{
-    uint8_t row;
-    uint8_t col;
+    if (g2_boss_spawned && g2_boss.alive) {
+        uint8_t b;
+        int px1 = G2_PLAYER_X;
+        int py1 = (int)g2_py;
+        int px2 = px1 + G2_PLAYER_W - 1;
+        int py2 = py1 + G2_PLAYER_H - 1;
+        int bx1;
+        int by1;
+        int bx2;
+        int by2;
 
-    for (row = 0; row < BRICK_ROWS; ++row) {
-        for (col = 0; col < BRICK_COLS; ++col) {
-            if (game.bricks[row][col]) {
-                return 1;
+        if (g2_boss.entering) {
+            g2_boss.x -= 1.2f;
+            if (g2_boss.x <= G2_BOSS_HOLD_X) {
+                g2_boss.x = (float)G2_BOSS_HOLD_X;
+                g2_boss.entering = 0U;
+            }
+        } else {
+            g2_boss.y += g2_boss.vy;
+            if (g2_boss.y < G2_BOSS_MIN_Y) {
+                g2_boss.y = (float)G2_BOSS_MIN_Y;
+                g2_boss.vy = AbsFloat(g2_boss.vy);
+            }
+            if (g2_boss.y > (79 - G2_BOSS_H - G2_BOSS_MARGIN_BOTTOM)) {
+                g2_boss.y = (float)(79 - G2_BOSS_H - G2_BOSS_MARGIN_BOTTOM);
+                g2_boss.vy = -AbsFloat(g2_boss.vy);
+            }
+            if ((now - g2_boss_last_shot_ms) >= g2_boss_shot_interval) {
+                g2_boss_last_shot_ms = now;
+                G2_BossFire();
+                if (g2_stage >= 3U) {
+                    G2_BossFire();
+                }
+            }
+        }
+
+        bx1 = (int)g2_boss.x;
+        by1 = (int)g2_boss.y;
+        bx2 = bx1 + G2_BOSS_W - 1;
+        by2 = by1 + G2_BOSS_H - 1;
+
+        if (!((px2 < bx1) || (bx2 < px1) || (py2 < by1) || (by2 < py1))) {
+            G2_CommitDeath();
+            return;
+        }
+
+        for (b = 0; b < G2_MAX_BULLETS; ++b) {
+            if (g2_bullets[b].alive) {
+                int ex1 = (int)g2_bullets[b].x;
+                int ey1 = (int)g2_bullets[b].y;
+                int ex2 = ex1 + G2_BULLET_W - 1;
+                int ey2 = ey1 + G2_BULLET_H - 1;
+
+                if (!((ex2 < bx1) || (bx2 < ex1) || (ey2 < by1) || (by2 < ey1))) {
+                    g2_bullets[b].alive = 0U;
+                    if (g2_boss.hp > 0U) {
+                        g2_boss.hp--;
+                    }
+                    g2_score += 120U;
+                    PlayBeep(&snd_boss_hit);
+                    if (g2_boss.hp == 0U) {
+                        g2_boss.alive = 0U;
+                        g2_boss_defeated = 1U;
+                        g2_clear = 1U;
+                        g2_score += 2000U;
+                        g2_input_lock_until = TICK_Get() + 500U;
+                        PlayBeep(&snd_boss_die);
+                    }
+                    break;
+                }
             }
         }
     }
 
-    return 0;
+    for (i = 0; i < G2_MAX_BOSS_SHOTS; ++i) {
+        if (g2_boss_shots[i].alive) {
+            int px1 = G2_PLAYER_X;
+            int py1 = (int)g2_py;
+            int px2 = px1 + G2_PLAYER_W - 1;
+            int py2 = py1 + G2_PLAYER_H - 1;
+            int sx1;
+            int sy1;
+            int sx2;
+            int sy2;
+
+            g2_boss_shots[i].x += g2_boss_shots[i].vx;
+            if ((g2_boss_shots[i].x + G2_BOSSSHOT_W) < 0.0f) {
+                g2_boss_shots[i].alive = 0U;
+                continue;
+            }
+
+            sx1 = (int)g2_boss_shots[i].x;
+            sy1 = (int)g2_boss_shots[i].y;
+            sx2 = sx1 + G2_BOSSSHOT_W - 1;
+            sy2 = sy1 + G2_BOSSSHOT_H - 1;
+
+            if (!((px2 < sx1) || (sx2 < px1) || (py2 < sy1) || (sy2 < py1))) {
+                G2_CommitDeath();
+                return;
+            }
+        }
+    }
 }
 
-static void PlayBounceSound(void)
+static void G2_Draw(void)
 {
-    SND_PlayNow(SCALE_FREQ(880), SOUND_TIME_SCALE(1));
+    uint8_t i;
+    uint8_t sprite_idx;
+
+    tGFX_SetSpritesCount(G2_SPRITE_COUNT);
+    GameLib_ClearScreen(G2_BG_COLOR);
+    for (sprite_idx = 0; sprite_idx < G2_SPRITE_COUNT; ++sprite_idx) {
+        tGFX_ClearSprite(sprite_idx);
+    }
+
+    player_sprite.x = G2_PLAYER_X;
+    player_sprite.y = (int16_t)g2_py;
+    tGFX_SetSprite(&player_sprite, 0);
+
+    sprite_idx = 1;
+    for (i = 0; i < G2_MAX_BULLETS; ++i, ++sprite_idx) {
+        if (g2_bullets[i].alive) {
+            bullet_sprites[i].x = (int16_t)g2_bullets[i].x;
+            bullet_sprites[i].y = (int16_t)g2_bullets[i].y;
+            tGFX_SetSprite(&bullet_sprites[i], sprite_idx);
+        }
+    }
+
+    for (i = 0; i < G2_MAX_ENEMIES; ++i, ++sprite_idx) {
+        if (g2_enemies[i].alive) {
+            enemy_sprites[i].x = (int16_t)g2_enemies[i].x;
+            enemy_sprites[i].y = (int16_t)g2_enemies[i].y;
+            enemy_sprites[i].size_x = g2_enemies[i].w;
+            enemy_sprites[i].size_y = g2_enemies[i].h;
+            tGFX_SetSprite(&enemy_sprites[i], sprite_idx);
+        }
+    }
+
+    if (g2_boss_spawned && g2_boss.alive) {
+        boss_sprite.x = (int16_t)g2_boss.x;
+        boss_sprite.y = (int16_t)g2_boss.y;
+        tGFX_SetSprite(&boss_sprite, sprite_idx);
+    }
+    sprite_idx++;
+
+    for (i = 0; i < G2_MAX_BOSS_SHOTS; ++i, ++sprite_idx) {
+        if (g2_boss_shots[i].alive) {
+            boss_shot_sprites[i].x = (int16_t)g2_boss_shots[i].x;
+            boss_shot_sprites[i].y = (int16_t)g2_boss_shots[i].y;
+            tGFX_SetSprite(&boss_shot_sprites[i], sprite_idx);
+        }
+    }
+
+    PrintLabelValue(1, 0, 14, "ST:", g2_stage);
+    PrintLabelValue(6, 0, 11, "SC:", g2_score);
+    PrintLabelValue(15, 0, 10, "L:", g2_lives);
+    if (g2_boss_spawned && g2_boss.alive) {
+        PrintLabelValue(1, 1, 9, "HP:", g2_boss.hp);
+    }
+    if (g2_clear) {
+        tGFX_SetCursor(5, 7);
+        tGFX_Print("GAME CLEAR", 10, G2_TEXT_BG_COLOR);
+    } else if (g2_game_over) {
+        if (g2_hard_over) {
+            tGFX_SetCursor(5, 7);
+            tGFX_Print("GAME OVER", 9, G2_TEXT_BG_COLOR);
+        } else {
+            tGFX_SetCursor(7, 7);
+            tGFX_Print("Miss!", 9, G2_TEXT_BG_COLOR);
+        }
+    }
 }

@@ -1,0 +1,7 @@
+{
+  "name": "gamelib",
+  "build": {
+    "includeDir": "inc",
+    "srcDir": "src"
+  }
+}

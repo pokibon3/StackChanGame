@@ -485,6 +485,7 @@ const uint8_t G2_BULLET_W = 3, G2_BULLET_H = 3;
 const float   G2_BULLET_VX = 3.2f;
 const float   G2_ENEMY_BASE_SPEED = 1.6f;
 const float   G2_ENEMY_SCORE_SPEED_COEF = 0.8f;
+const float   G2_SPEED_START_FACTOR = 2.0f/3.0f;  // ゲーム開始時の速度係数（ボス登場時に1.0へ線形補間）
 
 // ステージ係数
 const uint16_t G2_SPAWN_BASE_INTERVAL_MS   = 700;
@@ -786,7 +787,8 @@ void g2_update(){
       scorePhase = (float)(g2_score - g2_stageScoreBase) / (float)g2_bossSpawnScore;
       if (scorePhase > 1.0f) scorePhase = 1.0f;
     }
-    float vx = G2_ENEMY_BASE_SPEED * g2_speedMul + G2_ENEMY_SCORE_SPEED_COEF * scorePhase;
+    float speedFactor = G2_SPEED_START_FACTOR + (1.0f - G2_SPEED_START_FACTOR) * scorePhase;
+    float vx = (G2_ENEMY_BASE_SPEED * g2_speedMul + G2_ENEMY_SCORE_SPEED_COEF * scorePhase) * speedFactor;
 
     g2_en[i].x -= vx;
     if (g2_en[i].x + g2_en[i].w < 0) g2_en[i].alive=false;

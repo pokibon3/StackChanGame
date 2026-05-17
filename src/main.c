@@ -30,6 +30,7 @@
 #define G2_ENEMY_MAX_H 14
 #define G2_ENEMY_BASE_SPEED 1.6f
 #define G2_ENEMY_SCORE_SPEED_COEF 0.8f
+#define G2_SPEED_START_FACTOR (2.0f/3.0f)
 
 #define G2_SPAWN_BASE_INTERVAL_MS 700
 #define G2_SPAWN_DEC_PER_STAGE_MS 50
@@ -629,7 +630,8 @@ static void G2_Update(void)
                 }
             }
 
-            g2_enemies[i].x -= (G2_ENEMY_BASE_SPEED * g2_speed_mul) + (G2_ENEMY_SCORE_SPEED_COEF * score_phase);
+            float speed_factor = G2_SPEED_START_FACTOR + (1.0f - G2_SPEED_START_FACTOR) * score_phase;
+            g2_enemies[i].x -= ((G2_ENEMY_BASE_SPEED * g2_speed_mul) + (G2_ENEMY_SCORE_SPEED_COEF * score_phase)) * speed_factor;
             if ((g2_enemies[i].x + g2_enemies[i].w) < 0.0f) {
                 g2_enemies[i].alive = 0U;
                 continue;

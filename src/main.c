@@ -30,7 +30,9 @@
 #define G2_ENEMY_MAX_H 12
 #define G2_ENEMY_BASE_SPEED 1.6f
 #define G2_ENEMY_SCORE_SPEED_COEF 0.8f
-#define G2_SPEED_START_FACTOR (2.0f/3.0f)
+#define G2_SPEED_START_BASE  0.5f
+#define G2_SPEED_END_BASE    0.8f
+#define G2_SPEED_STAGE_INC   0.1f
 
 #define G2_SPAWN_BASE_INTERVAL_MS 700
 #define G2_SPAWN_DEC_PER_STAGE_MS 50
@@ -215,6 +217,10 @@ static uint32_t prng_state = 0x13579bdfUL;
 
 static uint8_t btn_left_prev;
 static uint8_t btn_action_prev;
+static uint8_t btn_action_title_prev;
+
+typedef enum { STATE_TITLE = 0, STATE_PLAYING } GameState;
+static GameState game_state;
 
 static term_sprite_t player_sprite = {
     .x = 0, .y = 0, .size_x = G2_PLAYER_W, .size_y = G2_PLAYER_H,
@@ -259,6 +265,8 @@ static float AbsFloat(float value);
 static uint32_t NextRandom(void);
 static int RandomRange(int min_value, int max_value);
 static void PrintLabelValue(int x, int y, uint8_t color, const char *label, uint32_t value);
+static void Title_Update(void);
+static void Title_Draw(void);
 static void G2_ApplyStageParams(void);
 static void G2_Reset(void);
 static void G2_NextStage(void);
@@ -275,23 +283,48 @@ static void G2_Draw(void);
 int main(void)
 {
     AppInit();
-    G2_Reset();
-    PlayBeep(&snd_start);
+    game_state = STATE_TITLE;
+    btn_action_title_prev = 0U;
 
     while (1) {
         uint32_t frame_start = TICK_Get();
 
         BTN_Task();
-        G2_Update();
-        G2_Draw();
-        if (!g2_game_over && !g2_clear) {
-            g2_score += 1U;
+        if (game_state == STATE_TITLE) {
+            Title_Update();
+            Title_Draw();
+        } else {
+            G2_Update();
+            G2_Draw();
+            if (!g2_game_over && !g2_clear) {
+                g2_score += 1U;
+            }
         }
         tGFX_Update();
 
         while ((TICK_Get() - frame_start) < FRAME_MS) {
         }
     }
+}
+
+static void Title_Update(void)
+{
+    if (ButtonPressedEdge(BTN_ACTION, &btn_action_title_prev)) {
+        game_state = STATE_PLAYING;
+        G2_Reset();
+        PlayBeep(&snd_start);
+    }
+}
+
+/* 画面幅20列(160px/8px): "StackChan GAME"=14文字→x=3, "PUSH ACTION TO START"=20文字→x=0 */
+static void Title_Draw(void)
+{
+    tGFX_SetSpritesCount(0);
+    GameLib_ClearScreen(G2_BG_COLOR);
+    tGFX_SetCursor(3, 3);
+    tGFX_Print("StackChan GAME", 10, G2_BG_COLOR);
+    tGFX_SetCursor(0, 7);
+    tGFX_Print("PUSH ACTION TO START", 11, G2_BG_COLOR);
 }
 
 static void AppInit(void)
@@ -642,7 +675,10 @@ static void G2_Update(void)
                 }
             }
 
-            float speed_factor = G2_SPEED_START_FACTOR + (1.0f - G2_SPEED_START_FACTOR) * score_phase;
+            float stage_bonus  = G2_SPEED_STAGE_INC * (float)(g2_stage - 1U);
+            float start_factor = G2_SPEED_START_BASE + stage_bonus;
+            float end_factor   = G2_SPEED_END_BASE   + stage_bonus;
+            float speed_factor = start_factor + (end_factor - start_factor) * score_phase;
             g2_enemies[i].x -= ((G2_ENEMY_BASE_SPEED * g2_speed_mul) + (G2_ENEMY_SCORE_SPEED_COEF * score_phase)) * speed_factor;
             if ((g2_enemies[i].x + g2_enemies[i].w) < 0.0f) {
                 g2_enemies[i].alive = 0U;

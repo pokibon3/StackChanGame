@@ -17,18 +17,22 @@
 
 #define G2_MAX_BULLETS 8
 #define G2_MAX_ENEMIES 6
+#define G2_START_ENEMIES 3
 #define G2_MAX_BOSS_SHOTS 8
 
 #define G2_BULLET_W 3
 #define G2_BULLET_H 3
 #define G2_BULLET_VX 3.2f
 
-#define G2_ENEMY_MIN_W 8
-#define G2_ENEMY_MAX_W 14
-#define G2_ENEMY_MIN_H 6
-#define G2_ENEMY_MAX_H 14
+#define G2_ENEMY_MIN_W 12
+#define G2_ENEMY_MAX_W 12
+#define G2_ENEMY_MIN_H 12
+#define G2_ENEMY_MAX_H 12
 #define G2_ENEMY_BASE_SPEED 1.6f
 #define G2_ENEMY_SCORE_SPEED_COEF 0.8f
+#define G2_SPEED_START_BASE  0.5f
+#define G2_SPEED_END_BASE    0.8f
+#define G2_SPEED_STAGE_INC   0.1f
 
 #define G2_SPAWN_BASE_INTERVAL_MS 700
 #define G2_SPAWN_DEC_PER_STAGE_MS 50
@@ -138,34 +142,47 @@ static const uint8_t player_sprite_data[((G2_PLAYER_W + 3) / 4) * G2_PLAYER_H] =
     0x00, 0x00, 0x54, 0x15, 0x00,
     0x00, 0x01, 0x54, 0x15, 0x40
 };
+/* スペースインベーダー風敵 12×12 2bpp, palette 5: 0=透明, 1-3=黄色 */
 static const uint8_t enemy_sprite_data[((G2_ENEMY_MAX_W + 3) / 4) * G2_ENEMY_MAX_H] = {
-    [0 ... ((((G2_ENEMY_MAX_W + 3) / 4) * G2_ENEMY_MAX_H) - 1)] = 0x55
+    0x04, 0x00, 0x10,  /* row  0: antennae tips   ..X......X.. */
+    0x05, 0x00, 0x50,  /* row  1: antennae        ..XX....XX.. */
+    0x05, 0x55, 0x50,  /* row  2: head top        ..XXXXXXXX.. */
+    0x15, 0x55, 0x54,  /* row  3: head            .XXXXXXXXXX. */
+    0x50, 0x55, 0x05,  /* row  4: eyes            XX..XXXX..XX */
+    0x55, 0x55, 0x55,  /* row  5: full body       XXXXXXXXXXXX */
+    0x55, 0x55, 0x55,  /* row  6: full body       XXXXXXXXXXXX */
+    0x05, 0x55, 0x50,  /* row  7: body base       ..XXXXXXXX.. */
+    0x11, 0x00, 0x44,  /* row  8: legs            .X.X....X.X. */
+    0x11, 0x00, 0x44,  /* row  9: legs            .X.X....X.X. */
+    0x40, 0x00, 0x01,  /* row 10: feet            X..........X */
+    0x40, 0x00, 0x01,  /* row 11: feet            X..........X */
 };
 static const uint8_t boss_sprite_data[((G2_BOSS_W + 3) / 4) * G2_BOSS_H] = {
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x01, 0x54, 0x00, 0x00,
-    0x00, 0x00, 0x15, 0x55, 0x40, 0x00,
-    0x00, 0x01, 0x55, 0x55, 0x54, 0x00,
-    0x00, 0x15, 0x00, 0x00, 0x05, 0x40,
-    0x00, 0x54, 0x00, 0x00, 0x01, 0x50,
-    0x01, 0x50, 0x00, 0x00, 0x00, 0x54,
-    0x05, 0x40, 0xa0, 0xa0, 0x00, 0x55,
-    0x15, 0x00, 0xa0, 0xa0, 0x00, 0x15,
-    0x15, 0x00, 0x00, 0x00, 0x00, 0x15,
-    0x55, 0x02, 0x00, 0x08, 0x00, 0x55,
-    0x55, 0x00, 0x00, 0x00, 0x00, 0x15,
-    0x55, 0x00, 0xaa, 0xaa, 0x00, 0x15,
-    0x55, 0x00, 0x00, 0x00, 0x00, 0x15,
-    0x55, 0x02, 0x00, 0x02, 0x00, 0x15,
-    0x15, 0x00, 0x80, 0x08, 0x00, 0x15,
-    0x15, 0x00, 0x2a, 0xa8, 0x00, 0x55,
-    0x05, 0x40, 0x00, 0x00, 0x01, 0x50,
-    0x01, 0x50, 0x00, 0x00, 0x00, 0x54,
-    0x00, 0x54, 0x00, 0x00, 0x01, 0x50,
-    0x00, 0x15, 0x55, 0x55, 0x55, 0x40,
-    0x00, 0x01, 0x55, 0x55, 0x54, 0x00,
-    0x00, 0x00, 0x01, 0x54, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+    /* palette 7: 0=transparent, 1=red (outline), 2=yellow (antennae/arms), 3=white (eyes/mouth) */
+    0x00, 0x00, 0x0a, 0xa0, 0x00, 0x00,  /* antennae (yellow) */
+    0x00, 0x00, 0xa0, 0x0a, 0x00, 0x00,  /* antennae (yellow) */
+    0x00, 0x01, 0x04, 0x10, 0x40, 0x00,
+    0x00, 0x04, 0x04, 0x10, 0x10, 0x00,
+    0x00, 0x04, 0x01, 0x40, 0x10, 0x00,
+    0x00, 0x05, 0x41, 0x41, 0x50, 0x00,
+    0x00, 0x10, 0x40, 0x01, 0x04, 0x00,
+    0xa8, 0x10, 0x15, 0x54, 0x04, 0x22,  /* left □ yellow, right antenna yellow */
+    0xa8, 0x40, 0x00, 0x00, 0x01, 0x08,
+    0xa8, 0x43, 0xc0, 0x03, 0xc1, 0x08,  /* eyes white */
+    0x00, 0x43, 0xc0, 0x03, 0xc1, 0x08,  /* eyes white */
+    0x15, 0x03, 0xc0, 0x03, 0xc0, 0xa8,  /* eyes white, right antenna yellow */
+    0x40, 0x40, 0x00, 0x00, 0x01, 0x01,
+    0x40, 0x40, 0x00, 0x00, 0x01, 0x01,
+    0x40, 0x00, 0x30, 0x0c, 0x00, 0x01,  /* mouth dots white */
+    0x40, 0x40, 0x0f, 0xf0, 0x01, 0x01,  /* smile white */
+    0x15, 0x14, 0x00, 0x00, 0x14, 0x54,
+    0x00, 0x01, 0x40, 0x01, 0x40, 0x00,
+    0x00, 0x14, 0x05, 0x54, 0x14, 0x00,
+    0x00, 0x40, 0x10, 0x04, 0x01, 0x00,
+    0x01, 0x00, 0x04, 0x10, 0x00, 0x40,
+    0x01, 0x00, 0x04, 0x10, 0x00, 0x40,
+    0x00, 0x40, 0x10, 0x04, 0x01, 0x00,
+    0x00, 0x55, 0x40, 0x01, 0x54, 0x00,
 };
 static const uint8_t bullet_sprite_data[((G2_BULLET_W + 3) / 4) * G2_BULLET_H] = {
     [0 ... ((((G2_BULLET_W + 3) / 4) * G2_BULLET_H) - 1)] = 0x55
@@ -200,6 +217,10 @@ static uint32_t prng_state = 0x13579bdfUL;
 
 static uint8_t btn_left_prev;
 static uint8_t btn_action_prev;
+static uint8_t btn_action_title_prev;
+
+typedef enum { STATE_TITLE = 0, STATE_PLAYING } GameState;
+static GameState game_state;
 
 static term_sprite_t player_sprite = {
     .x = 0, .y = 0, .size_x = G2_PLAYER_W, .size_y = G2_PLAYER_H,
@@ -244,11 +265,14 @@ static float AbsFloat(float value);
 static uint32_t NextRandom(void);
 static int RandomRange(int min_value, int max_value);
 static void PrintLabelValue(int x, int y, uint8_t color, const char *label, uint32_t value);
+static void Title_Update(void);
+static void Title_Draw(void);
 static void G2_ApplyStageParams(void);
 static void G2_Reset(void);
 static void G2_NextStage(void);
 static void G2_RestartStage(void);
 static uint8_t G2_CountAliveEnemies(void);
+static uint8_t G2_EffectiveMaxEnemies(void);
 static void G2_CommitDeath(void);
 static void G2_SpawnEnemy(void);
 static void G2_Fire(void);
@@ -259,23 +283,48 @@ static void G2_Draw(void);
 int main(void)
 {
     AppInit();
-    G2_Reset();
-    PlayBeep(&snd_start);
+    game_state = STATE_TITLE;
+    btn_action_title_prev = 0U;
 
     while (1) {
         uint32_t frame_start = TICK_Get();
 
         BTN_Task();
-        G2_Update();
-        G2_Draw();
-        if (!g2_game_over && !g2_clear) {
-            g2_score += 1U;
+        if (game_state == STATE_TITLE) {
+            Title_Update();
+            Title_Draw();
+        } else {
+            G2_Update();
+            G2_Draw();
+            if (!g2_game_over && !g2_clear) {
+                g2_score += 1U;
+            }
         }
         tGFX_Update();
 
         while ((TICK_Get() - frame_start) < FRAME_MS) {
         }
     }
+}
+
+static void Title_Update(void)
+{
+    if (ButtonPressedEdge(BTN_ACTION, &btn_action_title_prev)) {
+        game_state = STATE_PLAYING;
+        G2_Reset();
+        PlayBeep(&snd_start);
+    }
+}
+
+/* 画面幅20列(160px/8px): "StackChan GAME"=14文字→x=3, "PUSH ACTION TO START"=20文字→x=0 */
+static void Title_Draw(void)
+{
+    tGFX_SetSpritesCount(0);
+    GameLib_ClearScreen(G2_BG_COLOR);
+    tGFX_SetCursor(3, 3);
+    tGFX_Print("StackChan GAME", 10, G2_BG_COLOR);
+    tGFX_SetCursor(0, 7);
+    tGFX_Print("PUSH ACTION TO START", 11, G2_BG_COLOR);
 }
 
 static void AppInit(void)
@@ -440,6 +489,12 @@ static void G2_RestartStage(void)
     }
 }
 
+static uint8_t G2_EffectiveMaxEnemies(void)
+{
+    uint32_t score = (g2_score < G2_BOSS_SPAWN_SCORE) ? g2_score : G2_BOSS_SPAWN_SCORE;
+    return (uint8_t)(G2_START_ENEMIES + ((G2_MAX_ENEMIES - G2_START_ENEMIES) * score / G2_BOSS_SPAWN_SCORE));
+}
+
 static uint8_t G2_CountAliveEnemies(void)
 {
     uint8_t i;
@@ -479,8 +534,8 @@ static void G2_SpawnEnemy(void)
         if (!g2_enemies[i].alive) {
             g2_enemies[i].alive = 1U;
             g2_enemies[i].x = 128.0f + RandomRange(0, 25);
-            g2_enemies[i].w = (uint8_t)RandomRange(G2_ENEMY_MIN_W, G2_ENEMY_MAX_W + 1);
-            g2_enemies[i].h = (uint8_t)RandomRange(G2_ENEMY_MIN_H, G2_ENEMY_MAX_H + 1);
+            g2_enemies[i].w = G2_ENEMY_MAX_W;
+            g2_enemies[i].h = G2_ENEMY_MAX_H;
             g2_enemies[i].y = (float)RandomRange(10, 80 - (int)g2_enemies[i].h);
             return;
         }
@@ -593,13 +648,14 @@ static void G2_Update(void)
     if ((!g2_boss_spawned || !g2_boss.alive) && ((now - g2_last_spawn) >= g2_spawn_interval)) {
         int extra_chance;
         g2_last_spawn = now;
-        if (G2_CountAliveEnemies() < G2_MAX_ENEMIES) {
+        uint8_t eff_max = G2_EffectiveMaxEnemies();
+        if (G2_CountAliveEnemies() < eff_max) {
             G2_SpawnEnemy();
             extra_chance = G2_EXTRA_ENEMY_PER_STAGE_PC * g2_stage;
             if (extra_chance > G2_EXTRA_ENEMY_MAX_PC) {
                 extra_chance = G2_EXTRA_ENEMY_MAX_PC;
             }
-            if ((RandomRange(0, 100) < extra_chance) && (G2_CountAliveEnemies() < G2_MAX_ENEMIES)) {
+            if ((RandomRange(0, 100) < extra_chance) && (G2_CountAliveEnemies() < eff_max)) {
                 G2_SpawnEnemy();
             }
         }
@@ -619,7 +675,11 @@ static void G2_Update(void)
                 }
             }
 
-            g2_enemies[i].x -= (G2_ENEMY_BASE_SPEED * g2_speed_mul) + (G2_ENEMY_SCORE_SPEED_COEF * score_phase);
+            float stage_bonus  = G2_SPEED_STAGE_INC * (float)(g2_stage - 1U);
+            float start_factor = G2_SPEED_START_BASE + stage_bonus;
+            float end_factor   = G2_SPEED_END_BASE   + stage_bonus;
+            float speed_factor = start_factor + (end_factor - start_factor) * score_phase;
+            g2_enemies[i].x -= ((G2_ENEMY_BASE_SPEED * g2_speed_mul) + (G2_ENEMY_SCORE_SPEED_COEF * score_phase)) * speed_factor;
             if ((g2_enemies[i].x + g2_enemies[i].w) < 0.0f) {
                 g2_enemies[i].alive = 0U;
                 continue;

@@ -50,6 +50,20 @@ const uint8_t PROGMEM BOSS_BMP[72] = {
 #define BOSS_W 24
 #define BOSS_H 24
 
+// スペースインベーダー風敵キャラ (12×8 1bpp)
+const uint8_t PROGMEM ENEMY_BMP[16] = {
+  0x20, 0x40,  // row 0: antennae tips
+  0x10, 0x80,  // row 1: antennae diagonal
+  0x3F, 0xC0,  // row 2: head
+  0x6F, 0x60,  // row 3: eyes
+  0xFF, 0xF0,  // row 4: body
+  0xFF, 0xF0,  // row 5: body
+  0x50, 0xA0,  // row 6: legs
+  0xA0, 0x50,  // row 7: feet
+};
+#define ENEMY_W 12
+#define ENEMY_H  8
+
 /* =========================
  *  ブザー音（D9=OC1A / Timer1）
  * ========================= */
@@ -648,8 +662,8 @@ void g2_spawnEnemy(){
       g2_en[i].alive=true;
       g2_en[i].x = OLED_WIDTH + random(0,25);
       g2_en[i].y = 2 + random(0, OLED_HEIGHT - (2 + 8));
-      g2_en[i].w = 8 + random(0,6);
-      g2_en[i].h = 6 + random(0,8);
+      g2_en[i].w = ENEMY_W;
+      g2_en[i].h = ENEMY_H;
       return;
     }
   }
@@ -904,7 +918,7 @@ void g2_draw(){
   // 敵
   for(uint8_t i=0;i<G2_MAX_ENEMIES;i++){
     if (!g2_en[i].alive) continue;
-    display.drawRect((int)g2_en[i].x, (int)g2_en[i].y, g2_en[i].w, g2_en[i].h, SSD1306_WHITE);
+    display.drawBitmap((int)g2_en[i].x, (int)g2_en[i].y, ENEMY_BMP, ENEMY_W, ENEMY_H, SSD1306_WHITE);
   }
 
   // ボス

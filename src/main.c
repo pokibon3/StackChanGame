@@ -24,10 +24,10 @@
 #define G2_BULLET_H 3
 #define G2_BULLET_VX 3.2f
 
-#define G2_ENEMY_MIN_W 8
-#define G2_ENEMY_MAX_W 14
-#define G2_ENEMY_MIN_H 6
-#define G2_ENEMY_MAX_H 14
+#define G2_ENEMY_MIN_W 12
+#define G2_ENEMY_MAX_W 12
+#define G2_ENEMY_MIN_H 8
+#define G2_ENEMY_MAX_H 8
 #define G2_ENEMY_BASE_SPEED 1.6f
 #define G2_ENEMY_SCORE_SPEED_COEF 0.8f
 #define G2_SPEED_START_FACTOR (2.0f/3.0f)
@@ -140,8 +140,16 @@ static const uint8_t player_sprite_data[((G2_PLAYER_W + 3) / 4) * G2_PLAYER_H] =
     0x00, 0x00, 0x54, 0x15, 0x00,
     0x00, 0x01, 0x54, 0x15, 0x40
 };
+/* スペースインベーダー風敵 12×8 2bpp, palette 5: 0=透明, 1-3=黄色 */
 static const uint8_t enemy_sprite_data[((G2_ENEMY_MAX_W + 3) / 4) * G2_ENEMY_MAX_H] = {
-    [0 ... ((((G2_ENEMY_MAX_W + 3) / 4) * G2_ENEMY_MAX_H) - 1)] = 0x55
+    0x04, 0x00, 0x10,  /* row 0: antennae tips    ..X......X.. */
+    0x01, 0x00, 0x40,  /* row 1: antennae diag    ...X....X... */
+    0x05, 0x55, 0x50,  /* row 2: head             ..XXXXXXXX.. */
+    0x14, 0x55, 0x14,  /* row 3: eyes             .XX.XXXX.XX. */
+    0x55, 0x55, 0x55,  /* row 4: full body        XXXXXXXXXXXX */
+    0x55, 0x55, 0x55,  /* row 5: full body        XXXXXXXXXXXX */
+    0x11, 0x00, 0x44,  /* row 6: legs             .X.X....X.X. */
+    0x44, 0x00, 0x11,  /* row 7: feet             X.X......X.X */
 };
 static const uint8_t boss_sprite_data[((G2_BOSS_W + 3) / 4) * G2_BOSS_H] = {
     /* palette 7: 0=transparent, 1=red (outline), 2=yellow (antennae/arms), 3=white (eyes/mouth) */
@@ -489,8 +497,8 @@ static void G2_SpawnEnemy(void)
         if (!g2_enemies[i].alive) {
             g2_enemies[i].alive = 1U;
             g2_enemies[i].x = 128.0f + RandomRange(0, 25);
-            g2_enemies[i].w = (uint8_t)RandomRange(G2_ENEMY_MIN_W, G2_ENEMY_MAX_W + 1);
-            g2_enemies[i].h = (uint8_t)RandomRange(G2_ENEMY_MIN_H, G2_ENEMY_MAX_H + 1);
+            g2_enemies[i].w = G2_ENEMY_MAX_W;
+            g2_enemies[i].h = G2_ENEMY_MAX_H;
             g2_enemies[i].y = (float)RandomRange(10, 80 - (int)g2_enemies[i].h);
             return;
         }

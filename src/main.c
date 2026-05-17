@@ -26,8 +26,8 @@
 
 #define G2_ENEMY_MIN_W 12
 #define G2_ENEMY_MAX_W 12
-#define G2_ENEMY_MIN_H 8
-#define G2_ENEMY_MAX_H 8
+#define G2_ENEMY_MIN_H 12
+#define G2_ENEMY_MAX_H 12
 #define G2_ENEMY_BASE_SPEED 1.6f
 #define G2_ENEMY_SCORE_SPEED_COEF 0.8f
 #define G2_SPEED_START_FACTOR (2.0f/3.0f)
@@ -140,16 +140,20 @@ static const uint8_t player_sprite_data[((G2_PLAYER_W + 3) / 4) * G2_PLAYER_H] =
     0x00, 0x00, 0x54, 0x15, 0x00,
     0x00, 0x01, 0x54, 0x15, 0x40
 };
-/* スペースインベーダー風敵 12×8 2bpp, palette 5: 0=透明, 1-3=黄色 */
+/* スペースインベーダー風敵 12×12 2bpp, palette 5: 0=透明, 1-3=黄色 */
 static const uint8_t enemy_sprite_data[((G2_ENEMY_MAX_W + 3) / 4) * G2_ENEMY_MAX_H] = {
-    0x04, 0x00, 0x10,  /* row 0: antennae tips    ..X......X.. */
-    0x01, 0x00, 0x40,  /* row 1: antennae diag    ...X....X... */
-    0x05, 0x55, 0x50,  /* row 2: head             ..XXXXXXXX.. */
-    0x14, 0x55, 0x14,  /* row 3: eyes             .XX.XXXX.XX. */
-    0x55, 0x55, 0x55,  /* row 4: full body        XXXXXXXXXXXX */
-    0x55, 0x55, 0x55,  /* row 5: full body        XXXXXXXXXXXX */
-    0x11, 0x00, 0x44,  /* row 6: legs             .X.X....X.X. */
-    0x44, 0x00, 0x11,  /* row 7: feet             X.X......X.X */
+    0x04, 0x00, 0x10,  /* row  0: antennae tips   ..X......X.. */
+    0x05, 0x00, 0x50,  /* row  1: antennae        ..XX....XX.. */
+    0x05, 0x55, 0x50,  /* row  2: head top        ..XXXXXXXX.. */
+    0x15, 0x55, 0x54,  /* row  3: head            .XXXXXXXXXX. */
+    0x50, 0x55, 0x05,  /* row  4: eyes            XX..XXXX..XX */
+    0x55, 0x55, 0x55,  /* row  5: full body       XXXXXXXXXXXX */
+    0x55, 0x55, 0x55,  /* row  6: full body       XXXXXXXXXXXX */
+    0x05, 0x55, 0x50,  /* row  7: body base       ..XXXXXXXX.. */
+    0x11, 0x00, 0x44,  /* row  8: legs            .X.X....X.X. */
+    0x11, 0x00, 0x44,  /* row  9: legs            .X.X....X.X. */
+    0x40, 0x00, 0x01,  /* row 10: feet            X..........X */
+    0x40, 0x00, 0x01,  /* row 11: feet            X..........X */
 };
 static const uint8_t boss_sprite_data[((G2_BOSS_W + 3) / 4) * G2_BOSS_H] = {
     /* palette 7: 0=transparent, 1=red (outline), 2=yellow (antennae/arms), 3=white (eyes/mouth) */

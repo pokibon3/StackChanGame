@@ -265,12 +265,12 @@ void tGFX_Print(char *txt, uint8_t color_foreground, uint8_t color_background)
 
     for (size_t i = 0; i < print_len; i++)
     {
-        if (term_x_pos > TERM_SIZE_X)
+        if (term_x_pos >= TERM_SIZE_X)
         {
             term_x_pos = 0;
             term_y_pos++;
         }
-        if (term_y_pos > TERM_SIZE_Y)
+        if (term_y_pos >= TERM_SIZE_Y)
         {
             term_y_pos = 0;
         }

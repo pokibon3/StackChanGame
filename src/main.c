@@ -1,5 +1,4 @@
 #include <stdint.h>
-#include <stdio.h>
 #include <string.h>
 
 #include "buttons.h"
@@ -264,6 +263,7 @@ static void PlayBeep(const beep_t *snd);
 static float AbsFloat(float value);
 static uint32_t NextRandom(void);
 static int RandomRange(int min_value, int max_value);
+static void Uint32ToDec(char *buf, uint32_t value);
 static void PrintLabelValue(int x, int y, uint8_t color, const char *label, uint32_t value);
 static void Title_Update(void);
 static void Title_Draw(void);
@@ -369,12 +369,34 @@ static int RandomRange(int min_value, int max_value)
     return min_value + (int)(NextRandom() % (uint32_t)(max_value - min_value));
 }
 
+static void Uint32ToDec(char *buf, uint32_t value)
+{
+    char tmp[10];
+    uint8_t len = 0U;
+
+    if (value == 0U) {
+        buf[0] = '0';
+        buf[1] = '\0';
+        return;
+    }
+
+    while (value > 0U) {
+        tmp[len++] = (char)('0' + (value % 10U));
+        value /= 10U;
+    }
+
+    while (len > 0U) {
+        *buf++ = tmp[--len];
+    }
+    *buf = '\0';
+}
+
 static void PrintLabelValue(int x, int y, uint8_t color, const char *label, uint32_t value)
 {
     char buf[11];
     tGFX_SetCursor((uint8_t)x, (uint8_t)y);
     tGFX_Print((char *)label, color, G2_TEXT_BG_COLOR);
-    sprintf(buf, "%lu", (unsigned long)value);
+    Uint32ToDec(buf, value);
     tGFX_SetCursor((uint8_t)(x + (int)strlen(label)), (uint8_t)y);
     tGFX_Print(buf, color, G2_TEXT_BG_COLOR);
 }

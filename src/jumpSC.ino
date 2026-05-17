@@ -50,19 +50,23 @@ const uint8_t PROGMEM BOSS_BMP[72] = {
 #define BOSS_W 24
 #define BOSS_H 24
 
-// スペースインベーダー風敵キャラ (12×8 1bpp)
-const uint8_t PROGMEM ENEMY_BMP[16] = {
-  0x20, 0x40,  // row 0: antennae tips
-  0x10, 0x80,  // row 1: antennae diagonal
-  0x3F, 0xC0,  // row 2: head
-  0x6F, 0x60,  // row 3: eyes
-  0xFF, 0xF0,  // row 4: body
-  0xFF, 0xF0,  // row 5: body
-  0x50, 0xA0,  // row 6: legs
-  0xA0, 0x50,  // row 7: feet
+// スペースインベーダー風敵キャラ (12×12 1bpp)
+const uint8_t PROGMEM ENEMY_BMP[24] = {
+  0x20, 0x40,  // row  0: antennae tips
+  0x30, 0xC0,  // row  1: antennae
+  0x3F, 0xC0,  // row  2: head top
+  0x7F, 0xE0,  // row  3: head
+  0xCF, 0x30,  // row  4: eyes
+  0xFF, 0xF0,  // row  5: body
+  0xFF, 0xF0,  // row  6: body
+  0x3F, 0xC0,  // row  7: body base
+  0x50, 0xA0,  // row  8: legs
+  0x50, 0xA0,  // row  9: legs
+  0x80, 0x10,  // row 10: feet
+  0x80, 0x10,  // row 11: feet
 };
 #define ENEMY_W 12
-#define ENEMY_H  8
+#define ENEMY_H 12
 
 /* =========================
  *  ブザー音（D9=OC1A / Timer1）
@@ -661,7 +665,7 @@ void g2_spawnEnemy(){
     if (!g2_en[i].alive){
       g2_en[i].alive=true;
       g2_en[i].x = OLED_WIDTH + random(0,25);
-      g2_en[i].y = 2 + random(0, OLED_HEIGHT - (2 + 8));
+      g2_en[i].y = 2 + random(0, OLED_HEIGHT - (2 + ENEMY_H));
       g2_en[i].w = ENEMY_W;
       g2_en[i].h = ENEMY_H;
       return;

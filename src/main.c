@@ -550,7 +550,7 @@ static void G2_CommitDeath(void)
         g2_lives--;
     }
     g2_hard_over = (g2_lives == 0U) ? 1U : 0U;
-    g2_input_lock_until = TICK_Get() + 500U;
+    g2_input_lock_until = TICK_Get() + (g2_hard_over ? 3000U : 500U);
     btn_left_prev = 0U;
     btn_action_prev = 0U;
 }
@@ -620,16 +620,18 @@ static void G2_Update(void)
         if (now < g2_input_lock_until) {
             return;
         }
+        if (g2_hard_over) {
+            game_state = STATE_TITLE;
+            btn_action_title_prev = BTN_IsPressed(BTN_ACTION);
+            G2_Reset();
+            return;
+        }
         if (fire_edge) {
             PlayBeep(g2_clear ? &snd_start : &snd_restart);
             if (g2_clear) {
                 G2_NextStage();
             } else {
-                if (g2_hard_over) {
-                    G2_Reset();
-                } else {
-                    G2_RestartStage();
-                }
+                G2_RestartStage();
             }
         }
         if (ButtonPressedEdge(BTN_LEFT, &btn_left_prev)) {
@@ -912,7 +914,7 @@ static void G2_Draw(void)
     }
     if (g2_clear) {
         tGFX_SetCursor(5, 7);
-        tGFX_Print("GAME CLEAR", 10, G2_TEXT_BG_COLOR);
+        tGFX_Print("STAGE CLEAR", 11, G2_TEXT_BG_COLOR);
     } else if (g2_game_over) {
         if (g2_hard_over) {
             tGFX_SetCursor(5, 7);

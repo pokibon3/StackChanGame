@@ -286,6 +286,7 @@ static void G2_Draw(void);
 int main(void)
 {
     AppInit();
+    G2_Reset();
     game_state = STATE_TITLE;
     btn_action_title_prev = 0U;
 
@@ -443,6 +444,9 @@ static void G2_Reset(void)
     g2_boss_spawned = 0U;
     g2_boss_defeated = 0U;
     g2_input_lock_until = 0U;
+    g2_gameover_title_at = 0U;
+    btn_left_prev = BTN_IsPressed(BTN_LEFT);
+    btn_action_prev = BTN_IsPressed(BTN_ACTION);
 
     G2_ApplyStageParams();
 
@@ -637,20 +641,16 @@ static void G2_Update(void)
             return;
         }
         if (fire_edge) {
-            PlayBeep(g2_clear ? &snd_start : &snd_restart);
             if (g2_clear) {
+                PlayBeep(&snd_start);
                 G2_NextStage();
+            } else if (g2_hard_over) {
+                game_state = STATE_TITLE;
+                btn_action_title_prev = BTN_IsPressed(BTN_ACTION);
             } else {
-                if (g2_hard_over) {
-                    G2_Reset();
-                } else {
-                    G2_RestartStage();
-                }
+                PlayBeep(&snd_restart);
+                G2_RestartStage();
             }
-        }
-        if (ButtonPressedEdge(BTN_LEFT, &btn_left_prev)) {
-            PlayBeep(&snd_cancel);
-            G2_Reset();
         }
         return;
     }

@@ -214,7 +214,6 @@ static uint16_t g2_boss_shot_interval;
 static uint8_t g2_lives;
 static uint8_t g2_hard_over;
 static uint32_t g2_input_lock_until;
-static uint32_t g2_gameover_title_at;
 static uint32_t prng_state = 0x13579bdfUL;
 
 static uint8_t btn_left_prev;
@@ -286,7 +285,6 @@ static void G2_Draw(void);
 int main(void)
 {
     AppInit();
-    G2_Reset();
     game_state = STATE_TITLE;
     btn_action_title_prev = 0U;
 
@@ -294,22 +292,15 @@ int main(void)
         uint32_t frame_start = TICK_Get();
 
         BTN_Task();
-
-        /* Update: ステート遷移はここで発生する */
         if (game_state == STATE_TITLE) {
             Title_Update();
+            Title_Draw();
         } else {
             G2_Update();
+            G2_Draw();
             if (!g2_game_over && !g2_clear) {
                 g2_score += 1U;
             }
-        }
-
-        /* Draw: 遷移後のステートで描画するため if-else を再評価 */
-        if (game_state == STATE_TITLE) {
-            Title_Draw();
-        } else {
-            G2_Draw();
         }
         tGFX_Update();
 
@@ -444,9 +435,6 @@ static void G2_Reset(void)
     g2_boss_spawned = 0U;
     g2_boss_defeated = 0U;
     g2_input_lock_until = 0U;
-    g2_gameover_title_at = 0U;
-    btn_left_prev = BTN_IsPressed(BTN_LEFT);
-    btn_action_prev = BTN_IsPressed(BTN_ACTION);
 
     G2_ApplyStageParams();
 
@@ -563,9 +551,6 @@ static void G2_CommitDeath(void)
     }
     g2_hard_over = (g2_lives == 0U) ? 1U : 0U;
     g2_input_lock_until = TICK_Get() + 500U;
-    if (g2_hard_over) {
-        g2_gameover_title_at = TICK_Get() + 3000U;
-    }
     btn_left_prev = 0U;
     btn_action_prev = 0U;
 }
@@ -635,22 +620,21 @@ static void G2_Update(void)
         if (now < g2_input_lock_until) {
             return;
         }
-        if (g2_hard_over && now >= g2_gameover_title_at) {
-            game_state = STATE_TITLE;
-            btn_action_title_prev = BTN_IsPressed(BTN_ACTION);
-            return;
-        }
         if (fire_edge) {
+            PlayBeep(g2_clear ? &snd_start : &snd_restart);
             if (g2_clear) {
-                PlayBeep(&snd_start);
                 G2_NextStage();
-            } else if (g2_hard_over) {
-                game_state = STATE_TITLE;
-                btn_action_title_prev = BTN_IsPressed(BTN_ACTION);
             } else {
-                PlayBeep(&snd_restart);
-                G2_RestartStage();
+                if (g2_hard_over) {
+                    G2_Reset();
+                } else {
+                    G2_RestartStage();
+                }
             }
+        }
+        if (ButtonPressedEdge(BTN_LEFT, &btn_left_prev)) {
+            PlayBeep(&snd_cancel);
+            G2_Reset();
         }
         return;
     }
@@ -927,8 +911,8 @@ static void G2_Draw(void)
         PrintLabelValue(1, 1, 9, "HP:", g2_boss.hp);
     }
     if (g2_clear) {
-        tGFX_SetCursor(4, 7);
-        tGFX_Print("STAGE CLEAR", 10, G2_TEXT_BG_COLOR);
+        tGFX_SetCursor(5, 7);
+        tGFX_Print("GAME CLEAR", 10, G2_TEXT_BG_COLOR);
     } else if (g2_game_over) {
         if (g2_hard_over) {
             tGFX_SetCursor(5, 7);

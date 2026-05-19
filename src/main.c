@@ -293,15 +293,22 @@ int main(void)
         uint32_t frame_start = TICK_Get();
 
         BTN_Task();
+
+        /* Update: ステート遷移はここで発生する */
         if (game_state == STATE_TITLE) {
             Title_Update();
-            Title_Draw();
         } else {
             G2_Update();
-            G2_Draw();
             if (!g2_game_over && !g2_clear) {
                 g2_score += 1U;
             }
+        }
+
+        /* Draw: 遷移後のステートで描画するため if-else を再評価 */
+        if (game_state == STATE_TITLE) {
+            Title_Draw();
+        } else {
+            G2_Draw();
         }
         tGFX_Update();
 
@@ -626,7 +633,7 @@ static void G2_Update(void)
         }
         if (g2_hard_over && now >= g2_gameover_title_at) {
             game_state = STATE_TITLE;
-            btn_action_title_prev = 0U;
+            btn_action_title_prev = BTN_IsPressed(BTN_ACTION);
             return;
         }
         if (fire_edge) {

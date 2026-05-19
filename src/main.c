@@ -9,7 +9,8 @@
 
 #define FRAME_MS 20
 
-#define G2_PLAYER_X 12
+#define G2_PLAYER_X     12
+#define G2_PLAYER_X_MAX 60
 #define G2_PLAYER_W 20
 #define G2_PLAYER_H 20
 #define G2_MOVE_SPEED 3.0f
@@ -190,6 +191,7 @@ static const uint8_t boss_shot_sprite_data[((G2_BOSSSHOT_W + 3) / 4) * G2_BOSSSH
     [0 ... ((((G2_BOSSSHOT_W + 3) / 4) * G2_BOSSSHOT_H) - 1)] = 0x55
 };
 
+static float g2_px;
 static float g2_py;
 static bullet_t g2_bullets[G2_MAX_BULLETS];
 static enemy_t g2_enemies[G2_MAX_ENEMIES];
@@ -421,6 +423,7 @@ static void G2_Reset(void)
     memset(g2_enemies, 0, sizeof(g2_enemies));
     memset(g2_boss_shots, 0, sizeof(g2_boss_shots));
 
+    g2_px = (float)G2_PLAYER_X;
     g2_py = 30.0f;
     g2_score = 0U;
     g2_game_over = 0U;
@@ -466,6 +469,8 @@ static void G2_NextStage(void)
     g2_last_spawn = TICK_Get();
     g2_boss_last_shot_ms = TICK_Get();
     g2_input_lock_until = 0U;
+    g2_px = (float)G2_PLAYER_X;
+    g2_py = 30.0f;
 
     g2_boss.x = 128.0f + G2_BOSS_ENTRY_OFFSET_X;
     g2_boss.y = 12.0f;
@@ -487,6 +492,7 @@ static void G2_RestartStage(void)
     memset(g2_enemies, 0, sizeof(g2_enemies));
     memset(g2_boss_shots, 0, sizeof(g2_boss_shots));
 
+    g2_px = (float)G2_PLAYER_X;
     g2_py = 30.0f;
     g2_game_over = 0U;
     g2_game_over_sound_played = 0U;
@@ -570,7 +576,7 @@ static void G2_Fire(void)
     for (i = 0; i < G2_MAX_BULLETS; ++i) {
         if (!g2_bullets[i].alive) {
             g2_bullets[i].alive = 1U;
-            g2_bullets[i].x = (float)(G2_PLAYER_X + 18);
+            g2_bullets[i].x = g2_px + (float)(G2_PLAYER_W - 2);
             g2_bullets[i].y = g2_py + 4.0f;
             g2_bullets[i].vx = G2_BULLET_VX;
             PlayBeep(&snd_shot);
@@ -602,8 +608,10 @@ static void G2_BossFire(void)
 
 static void G2_Update(void)
 {
-    uint8_t move_up = BTN_IsPressed(BTN_UP);
-    uint8_t move_down = BTN_IsPressed(BTN_DOWN);
+    uint8_t move_up    = BTN_IsPressed(BTN_UP);
+    uint8_t move_down  = BTN_IsPressed(BTN_DOWN);
+    uint8_t move_left  = BTN_IsPressed(BTN_LEFT);
+    uint8_t move_right = BTN_IsPressed(BTN_RIGHT);
     uint8_t fire_edge = ButtonPressedEdge(BTN_ACTION, &btn_action_prev);
     uint32_t now = TICK_Get();
     uint8_t i;
@@ -636,13 +644,16 @@ static void G2_Update(void)
     } else if (move_down && !move_up) {
         g2_py += G2_MOVE_SPEED;
     }
+    if (move_left && !move_right) {
+        g2_px -= G2_MOVE_SPEED;
+    } else if (move_right && !move_left) {
+        g2_px += G2_MOVE_SPEED;
+    }
 
-    if (g2_py < 0.0f) {
-        g2_py = 0.0f;
-    }
-    if (g2_py > 60.0f) {
-        g2_py = 60.0f;
-    }
+    if (g2_py < 0.0f) { g2_py = 0.0f; }
+    if (g2_py > 60.0f) { g2_py = 60.0f; }
+    if (g2_px < 0.0f) { g2_px = 0.0f; }
+    if (g2_px > (float)G2_PLAYER_X_MAX) { g2_px = (float)G2_PLAYER_X_MAX; }
 
     if (fire_edge) {
         G2_Fire();
@@ -707,7 +718,7 @@ static void G2_Update(void)
                 continue;
             }
 
-            px1 = G2_PLAYER_X;
+            px1 = (int)g2_px;
             py1 = (int)g2_py;
             px2 = px1 + G2_PLAYER_W - 1;
             py2 = py1 + G2_PLAYER_H - 1;
@@ -742,7 +753,7 @@ static void G2_Update(void)
 
     if (g2_boss_spawned && g2_boss.alive) {
         uint8_t b;
-        int px1 = G2_PLAYER_X;
+        int px1 = (int)g2_px;
         int py1 = (int)g2_py;
         int px2 = px1 + G2_PLAYER_W - 1;
         int py2 = py1 + G2_PLAYER_H - 1;
@@ -816,7 +827,7 @@ static void G2_Update(void)
 
     for (i = 0; i < G2_MAX_BOSS_SHOTS; ++i) {
         if (g2_boss_shots[i].alive) {
-            int px1 = G2_PLAYER_X;
+            int px1 = (int)g2_px;
             int py1 = (int)g2_py;
             int px2 = px1 + G2_PLAYER_W - 1;
             int py2 = py1 + G2_PLAYER_H - 1;
@@ -855,7 +866,7 @@ static void G2_Draw(void)
         tGFX_ClearSprite(sprite_idx);
     }
 
-    player_sprite.x = G2_PLAYER_X;
+    player_sprite.x = (int16_t)g2_px;
     player_sprite.y = (int16_t)g2_py;
     tGFX_SetSprite(&player_sprite, 0);
 

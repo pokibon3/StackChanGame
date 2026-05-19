@@ -214,6 +214,7 @@ static uint16_t g2_boss_shot_interval;
 static uint8_t g2_lives;
 static uint8_t g2_hard_over;
 static uint32_t g2_input_lock_until;
+static uint32_t g2_gameover_title_at;
 static uint32_t prng_state = 0x13579bdfUL;
 
 static uint8_t btn_left_prev;
@@ -551,6 +552,9 @@ static void G2_CommitDeath(void)
     }
     g2_hard_over = (g2_lives == 0U) ? 1U : 0U;
     g2_input_lock_until = TICK_Get() + 500U;
+    if (g2_hard_over) {
+        g2_gameover_title_at = TICK_Get() + 3000U;
+    }
     btn_left_prev = 0U;
     btn_action_prev = 0U;
 }
@@ -618,6 +622,11 @@ static void G2_Update(void)
 
     if (g2_clear || g2_game_over) {
         if (now < g2_input_lock_until) {
+            return;
+        }
+        if (g2_hard_over && now >= g2_gameover_title_at) {
+            game_state = STATE_TITLE;
+            btn_action_title_prev = 0U;
             return;
         }
         if (fire_edge) {
@@ -911,8 +920,8 @@ static void G2_Draw(void)
         PrintLabelValue(1, 1, 9, "HP:", g2_boss.hp);
     }
     if (g2_clear) {
-        tGFX_SetCursor(5, 7);
-        tGFX_Print("GAME CLEAR", 10, G2_TEXT_BG_COLOR);
+        tGFX_SetCursor(4, 7);
+        tGFX_Print("STAGE CLEAR", 10, G2_TEXT_BG_COLOR);
     } else if (g2_game_over) {
         if (g2_hard_over) {
             tGFX_SetCursor(5, 7);

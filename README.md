@@ -1,4 +1,4 @@
-# jumpSC
+# StackChanGame
 
 `jumpSC` は、CH32V003 + ST7735 LCD 向けの小型シューティングゲームです。  
 現在の実装は `src/main.c` に集約されており、`termGFX` スプライトを使って自機、敵、ボス、弾を描画します。
